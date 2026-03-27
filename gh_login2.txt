@@ -1,0 +1,7 @@
+
+! First copy your one-time code: DB47-7B29
+Open this URL to continue in your web browser: https://github.com/login/device
+Ô£ô Authentication complete.
+- gh config set -h github.com git_protocol https
+Ô£ô Configured git protocol
+Ô£ô Logged in as AlfonsoCifuentes
