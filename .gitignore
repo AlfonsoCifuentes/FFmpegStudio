@@ -28,4 +28,5 @@ Desktop.ini
 # Temp
 *.tmp
 *.bak
+gh_*.txt
 *.log

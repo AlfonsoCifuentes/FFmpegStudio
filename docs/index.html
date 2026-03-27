@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FFmpeg Studio — Professional Video Converter for Windows</title>
+  <meta name="description" content="The professional graphical frontend for FFmpeg on Windows. Convert, trim, merge, extract audio, apply filters and more with 30+ encoding presets. Free and open source.">
+  <meta name="author" content="Alfonso Cifuentes Alonso">
+  <meta property="og:title" content="FFmpeg Studio — Professional Video Converter for Windows">
+  <meta property="og:description" content="The professional graphical frontend for FFmpeg. 30+ presets, 11 powerful tools, dark premium UI. Free download.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://alfonsocifuentes.github.io/FFmpegStudio/">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; font-size: 16px; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0B0E14;
+      color: #E8ECF4;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    a { color: #6C5CE7; text-decoration: none; transition: color .2s; }
+    a:hover { color: #7E6FF2; }
+    img { max-width: 100%; display: block; }
+
+    /* ── Noise overlay ────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ── Container ────────────────────────────────────────── */
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── Navigation ───────────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: rgba(11,14,20,.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid #1E2738;
+      z-index: 1000;
+      padding: 0 24px;
+    }
+    .nav-inner {
+      max-width: 1200px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 64px;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.15rem; }
+    .nav-brand img { width: 32px; height: 32px; border-radius: 6px; }
+    .nav-links { display: flex; gap: 28px; list-style: none; }
+    .nav-links a { color: #8892A8; font-size: .9rem; font-weight: 500; transition: color .2s; }
+    .nav-links a:hover { color: #E8ECF4; }
+    .nav-cta {
+      background: #6C5CE7; color: #fff; padding: 8px 20px; border-radius: 8px;
+      font-weight: 600; font-size: .85rem; transition: all .25s;
+    }
+    .nav-cta:hover { background: #7E6FF2; color: #fff; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(108,92,231,.4); }
+
+    /* ── Hero ─────────────────────────────────────────────── */
+    .hero {
+      padding: 140px 0 80px;
+      text-align: center;
+      position: relative;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+      width: 900px; height: 500px;
+      background: radial-gradient(ellipse, rgba(108,92,231,.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(108,92,231,.12); border: 1px solid rgba(108,92,231,.25);
+      padding: 6px 16px; border-radius: 100px;
+      font-size: .8rem; color: #6C5CE7; font-weight: 600;
+      margin-bottom: 24px;
+      animation: fadeInUp .6s ease both;
+    }
+    .hero-badge::before { content: '✦'; }
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4.2rem); font-weight: 800;
+      line-height: 1.1; margin-bottom: 20px;
+      animation: fadeInUp .6s ease .1s both;
+    }
+    .hero h1 .gradient {
+      background: linear-gradient(135deg, #6C5CE7, #00B4D8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero p {
+      font-size: 1.15rem; color: #8892A8; max-width: 600px; margin: 0 auto 36px;
+      animation: fadeInUp .6s ease .2s both;
+    }
+    .hero-buttons {
+      display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+      animation: fadeInUp .6s ease .3s both;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #6C5CE7, #5A4BD4);
+      color: #fff; padding: 14px 32px; border-radius: 12px;
+      font-weight: 700; font-size: 1rem; border: none; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 10px;
+      transition: all .3s; box-shadow: 0 4px 24px rgba(108,92,231,.3);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(108,92,231,.45); color: #fff; }
+    .btn-secondary {
+      background: rgba(30,39,56,.6); color: #E8ECF4; padding: 14px 32px;
+      border-radius: 12px; font-weight: 600; font-size: 1rem;
+      border: 1px solid #1E2738; display: inline-flex; align-items: center; gap: 10px;
+      transition: all .3s; cursor: pointer;
+    }
+    .btn-secondary:hover { background: rgba(30,39,56,.9); border-color: #6C5CE7; color: #fff; transform: translateY(-2px); }
+
+    /* ── Stats bar ────────────────────────────────────────── */
+    .stats {
+      display: flex; justify-content: center; gap: 48px; flex-wrap: wrap;
+      padding: 48px 0; border-bottom: 1px solid #1E2738;
+      animation: fadeInUp .6s ease .4s both;
+    }
+    .stat { text-align: center; }
+    .stat-number { font-size: 2rem; font-weight: 800; color: #6C5CE7; }
+    .stat-number.teal { color: #00B4D8; }
+    .stat-number.green { color: #00D68F; }
+    .stat-label { font-size: .85rem; color: #5A6478; margin-top: 4px; }
+
+    /* ── Section common ───────────────────────────────────── */
+    section { padding: 80px 0; }
+    .section-label {
+      display: inline-block; font-size: .75rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 2px;
+      color: #6C5CE7; margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 800;
+      margin-bottom: 16px; line-height: 1.15;
+    }
+    .section-desc { color: #8892A8; font-size: 1.05rem; max-width: 560px; margin-bottom: 48px; }
+    .section-center { text-align: center; }
+    .section-center .section-desc { margin-left: auto; margin-right: auto; }
+
+    /* ── Features grid ────────────────────────────────────── */
+    .features-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+    .feature-card {
+      background: #161B26; border: 1px solid #1E2738; border-radius: 14px;
+      padding: 28px; transition: all .3s; position: relative; overflow: hidden;
+    }
+    .feature-card:hover {
+      border-color: rgba(108,92,231,.4);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0,0,0,.25);
+    }
+    .feature-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, #6C5CE7, transparent);
+      opacity: 0; transition: opacity .3s;
+    }
+    .feature-card:hover::before { opacity: 1; }
+    .feature-icon {
+      width: 44px; height: 44px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem; margin-bottom: 16px;
+    }
+    .feature-icon.purple { background: rgba(108,92,231,.15); color: #6C5CE7; }
+    .feature-icon.teal   { background: rgba(0,180,216,.15); color: #00B4D8; }
+    .feature-icon.green  { background: rgba(0,214,143,.15); color: #00D68F; }
+    .feature-icon.yellow { background: rgba(253,203,110,.15); color: #FDCB6E; }
+    .feature-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
+    .feature-card p  { font-size: .9rem; color: #8892A8; line-height: 1.55; }
+
+    /* ── Presets section ───────────────────────────────────── */
+    .presets-wrap {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .preset-tag {
+      background: #161B26; border: 1px solid #1E2738; border-radius: 10px;
+      padding: 14px 18px; font-size: .88rem; font-weight: 500;
+      display: flex; align-items: center; gap: 10px;
+      transition: all .25s; cursor: default;
+    }
+    .preset-tag:hover { border-color: rgba(108,92,231,.4); background: #1C2333; }
+    .preset-tag .dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .dot.purple { background: #6C5CE7; }
+    .dot.teal   { background: #00B4D8; }
+    .dot.green  { background: #00D68F; }
+    .dot.yellow { background: #FDCB6E; }
+    .dot.red    { background: #FF6B6B; }
+
+    /* ── Screenshot / Mockup ──────────────────────────────── */
+    .mockup-wrap {
+      margin-top: 60px; text-align: center;
+      position: relative;
+    }
+    .mockup-glow {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      width: 80%; height: 80%;
+      background: radial-gradient(ellipse, rgba(108,92,231,.1) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .mockup-frame {
+      display: inline-block; background: #161B26; border: 1px solid #1E2738;
+      border-radius: 16px; padding: 24px; position: relative;
+      box-shadow: 0 24px 80px rgba(0,0,0,.4);
+      max-width: 900px; width: 100%;
+    }
+    .mockup-bar {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 16px;
+    }
+    .mockup-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .mockup-dot.r { background: #FF6B6B; }
+    .mockup-dot.y { background: #FDCB6E; }
+    .mockup-dot.g { background: #00D68F; }
+    .mockup-content {
+      background: #0F1219; border-radius: 10px; padding: 32px;
+      display: flex; gap: 20px; text-align: left; min-height: 300px;
+    }
+    .mockup-sidebar {
+      width: 180px; flex-shrink: 0; border-right: 1px solid #1E2738; padding-right: 16px;
+    }
+    .mockup-sidebar-item {
+      padding: 8px 12px; border-radius: 8px; font-size: .78rem; color: #5A6478;
+      margin-bottom: 4px; transition: all .2s;
+    }
+    .mockup-sidebar-item.active { background: rgba(108,92,231,.15); color: #6C5CE7; font-weight: 600; }
+    .mockup-main { flex: 1; }
+    .mockup-main h4 { font-size: .95rem; margin-bottom: 12px; color: #E8ECF4; }
+    .mockup-row {
+      display: flex; gap: 12px; margin-bottom: 10px;
+    }
+    .mockup-input {
+      flex: 1; height: 36px; background: #131824; border: 1px solid #1E2738;
+      border-radius: 8px;
+    }
+    .mockup-btn-sm {
+      height: 36px; padding: 0 20px; background: #6C5CE7; border-radius: 8px;
+      display: flex; align-items: center;
+    }
+    .mockup-progress {
+      height: 6px; background: #1E2738; border-radius: 3px; margin-top: 20px; overflow: hidden;
+    }
+    .mockup-progress-bar {
+      height: 100%; width: 72%; background: linear-gradient(90deg, #6C5CE7, #00B4D8);
+      border-radius: 3px; animation: progress 3s ease-in-out infinite;
+    }
+
+    /* ── Download CTA ─────────────────────────────────────── */
+    .cta {
+      text-align: center; padding: 80px 0 60px;
+      position: relative;
+    }
+    .cta::before {
+      content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+      width: 600px; height: 400px;
+      background: radial-gradient(ellipse, rgba(108,92,231,.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .cta-box {
+      background: linear-gradient(135deg, rgba(108,92,231,.08), rgba(0,180,216,.05));
+      border: 1px solid rgba(108,92,231,.2); border-radius: 20px;
+      padding: 56px 40px; max-width: 700px; margin: 0 auto;
+      position: relative;
+    }
+    .cta-box h2 { font-size: 2rem; font-weight: 800; margin-bottom: 12px; }
+    .cta-box p  { color: #8892A8; margin-bottom: 32px; }
+    .cta-buttons { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+    .dl-info { display: flex; justify-content: center; gap: 24px; margin-top: 20px; flex-wrap: wrap; }
+    .dl-info span { font-size: .8rem; color: #5A6478; display: flex; align-items: center; gap: 6px; }
+
+    /* ── Tech stack ────────────────────────────────────────── */
+    .tech-grid {
+      display: flex; justify-content: center; gap: 24px; flex-wrap: wrap;
+    }
+    .tech-item {
+      background: #161B26; border: 1px solid #1E2738; border-radius: 12px;
+      padding: 20px 28px; text-align: center; transition: all .3s;
+      min-width: 140px;
+    }
+    .tech-item:hover { border-color: rgba(108,92,231,.3); transform: translateY(-2px); }
+    .tech-item .tech-name { font-weight: 700; font-size: .95rem; margin-bottom: 4px; }
+    .tech-item .tech-desc { font-size: .78rem; color: #5A6478; }
+
+    /* ── Footer ────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid #1E2738; padding: 40px 0;
+      text-align: center;
+    }
+    .footer-links { display: flex; justify-content: center; gap: 24px; margin-bottom: 16px; flex-wrap: wrap; }
+    .footer-links a { color: #5A6478; font-size: .85rem; }
+    .footer-links a:hover { color: #E8ECF4; }
+    .footer-copy { color: #5A6478; font-size: .8rem; }
+
+    /* ── Mobile nav toggle ────────────────────────────────── */
+    .nav-toggle { display: none; background: none; border: none; color: #E8ECF4; font-size: 1.5rem; cursor: pointer; }
+
+    /* ── Animations ────────────────────────────────────────── */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes progress {
+      0%, 100% { width: 20%; }
+      50%      { width: 85%; }
+    }
+    .reveal {
+      opacity: 0; transform: translateY(30px);
+      transition: opacity .7s ease, transform .7s ease;
+    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+
+    /* ── Responsive ────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .nav-toggle { display: block; }
+      .nav-links.open {
+        display: flex; flex-direction: column;
+        position: absolute; top: 64px; left: 0; right: 0;
+        background: rgba(11,14,20,.97); padding: 20px 24px; gap: 16px;
+        border-bottom: 1px solid #1E2738;
+      }
+      .stats { gap: 24px; }
+      .hero h1 { font-size: 2.2rem; }
+      .features-grid { grid-template-columns: 1fr; }
+      .mockup-sidebar { display: none; }
+      .mockup-content { padding: 20px; }
+      .cta-box { padding: 36px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─── Navigation ──────────────────────────────────────── -->
+  <nav>
+    <div class="nav-inner">
+      <a class="nav-brand" href="#">
+        <img src="icon.png" alt="FFmpeg Studio icon"> FFmpeg Studio
+      </a>
+      <button class="nav-toggle" aria-label="Menu" onclick="document.querySelector('.nav-links').classList.toggle('open')">☰</button>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#presets">Presets</a></li>
+        <li><a href="#preview">Preview</a></li>
+        <li><a href="#download">Download</a></li>
+      </ul>
+      <a class="nav-cta" href="https://github.com/AlfonsoCifuentes/FFmpegStudio/releases" target="_blank" rel="noopener">
+        ↓ Download
+      </a>
+    </div>
+  </nav>
+
+  <!-- ─── Hero ────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">Version 1.0.0 — Free &amp; Open Source</div>
+      <h1>The Professional<br><span class="gradient">FFmpeg Frontend</span><br>for Windows</h1>
+      <p>Convert, trim, merge, extract audio, apply filters and more — all with a premium dark interface and 30+ one-click encoding presets.</p>
+      <div class="hero-buttons">
+        <a class="btn-primary" href="https://github.com/AlfonsoCifuentes/FFmpegStudio/releases" target="_blank" rel="noopener">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download for Windows
+        </a>
+        <a class="btn-secondary" href="https://github.com/AlfonsoCifuentes/FFmpegStudio" target="_blank" rel="noopener">
+          <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Stats ───────────────────────────────────────────── -->
+  <div class="container">
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-number">30+</div>
+        <div class="stat-label">Encoding Presets</div>
+      </div>
+      <div class="stat">
+        <div class="stat-number teal">11</div>
+        <div class="stat-label">Powerful Tools</div>
+      </div>
+      <div class="stat">
+        <div class="stat-number green">10</div>
+        <div class="stat-label">Preset Categories</div>
+      </div>
+      <div class="stat">
+        <div class="stat-number">100%</div>
+        <div class="stat-label">Free &amp; Open Source</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Features ────────────────────────────────────────── -->
+  <section id="features">
+    <div class="container section-center">
+      <div class="section-label">Features</div>
+      <h2 class="section-title">Everything You Need in One App</h2>
+      <p class="section-desc">Eleven specialized tools designed with a premium dark interface, each optimized for a specific media workflow.</p>
+      <div class="features-grid">
+        <div class="feature-card reveal">
+          <div class="feature-icon purple">⚡</div>
+          <h3>Encoding Presets</h3>
+          <p>30+ one-click presets for Android, iPhone, YouTube, Instagram, TikTok, WhatsApp, professional editing, archival and more.</p>
+        </div>
+        <div class="feature-card reveal">
+          <div class="feature-icon teal">🔄</div>
+          <h3>Format Conversion</h3>
+          <p>Convert between any media format with full control over codecs, bitrate, resolution, frame rate, and quality settings.</p>
+        </div>
+        <div class="feature-card reveal">
+          <div class="feature-icon green">✂️</div>
+          <h3>Trim &amp; Cut</h3>
+          <p>Precision video trimming with stream copy support for instant, lossless cuts without re-encoding.</p>
+        </div>
+        <div class="feature-card reveal">
+          <div class="feature-icon yellow">🎵</div>
+          <h3>Audio Extraction</h3>
+          <p>Extract and convert audio tracks to MP3, AAC, FLAC, WAV, Opus, and more with configurable quality.</p>
+        </div>
+        <div class="feature-card reveal">
+          <div class="feature-icon purple">🎨</div>
+          <h3>Video Filters</h3>
+          <p>Apply denoise, sharpen, blur, rotate, grayscale, sepia, vignette, stabilization and many other filters.</p>
+        </div>
+        <div class="feature-card reveal">
+          <div class="feature-icon teal">🔗</div>
+          <h3>Merge &amp; Concatenate</h3>
+          <p>Join multiple video or audio files with stream copy or re-encoding. Drag-and-drop file ordering.</p>
+        </div>
+        <div class="feature-card reveal">
+          <div class="feature-icon green">📐</div>
+          <h3>Resize &amp; Scale</h3>
+          <p>Resize video to any resolution while preserving aspect ratio, perfect for social media targets.</p>
+        </div>
+        <div class="feature-card reveal">
+          <div class="feature-icon yellow">📸</div>
+          <h3>Screenshots</h3>
+          <p>Extract individual frames or generate frame sequences at configurable intervals from any video.</p>
+        </div>
+        <div class="feature-card reveal">
+          <div class="feature-icon purple">📝</div>
+          <h3>Metadata Editor</h3>
+          <p>View and edit media file metadata tags — title, artist, album, year, and custom fields.</p>
+        </div>
+        <div class="feature-card reveal">
+          <div class="feature-icon teal">⌨️</div>
+          <h3>Advanced Mode</h3>
+          <p>Direct FFmpeg command-line input for power users who need full control over every parameter.</p>
+        </div>
+        <div class="feature-card reveal">
+          <div class="feature-icon green">🔄</div>
+          <h3>Auto Updates</h3>
+          <p>Built-in update checker that connects to GitHub to notify you of new releases automatically.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Presets ──────────────────────────────────────────── -->
+  <section id="presets" style="background: #0D1017;">
+    <div class="container section-center">
+      <div class="section-label">Presets</div>
+      <h2 class="section-title">30+ One-Click Encoding Presets</h2>
+      <p class="section-desc">From mobile-ready to professional archival — every preset is tuned for maximum quality and compatibility.</p>
+      <div class="presets-wrap reveal">
+        <div class="preset-tag"><span class="dot purple"></span>Android Compatible</div>
+        <div class="preset-tag"><span class="dot purple"></span>iPhone / iPad</div>
+        <div class="preset-tag"><span class="dot teal"></span>YouTube Upload</div>
+        <div class="preset-tag"><span class="dot teal"></span>YouTube 4K</div>
+        <div class="preset-tag"><span class="dot teal"></span>Instagram Reels</div>
+        <div class="preset-tag"><span class="dot teal"></span>TikTok</div>
+        <div class="preset-tag"><span class="dot purple"></span>WhatsApp</div>
+        <div class="preset-tag"><span class="dot purple"></span>Telegram</div>
+        <div class="preset-tag"><span class="dot teal"></span>Twitter / X</div>
+        <div class="preset-tag"><span class="dot green"></span>Web MP4 / HTML5</div>
+        <div class="preset-tag"><span class="dot green"></span>WebM VP9</div>
+        <div class="preset-tag"><span class="dot green"></span>GIF Animated</div>
+        <div class="preset-tag"><span class="dot yellow"></span>ProRes 422</div>
+        <div class="preset-tag"><span class="dot yellow"></span>ProRes 4444</div>
+        <div class="preset-tag"><span class="dot yellow"></span>DNxHR HQ</div>
+        <div class="preset-tag"><span class="dot red"></span>Lossless FFV1</div>
+        <div class="preset-tag"><span class="dot red"></span>H.265 Archival</div>
+        <div class="preset-tag"><span class="dot green"></span>Low Latency Stream</div>
+        <div class="preset-tag"><span class="dot green"></span>HLS / DASH Ready</div>
+        <div class="preset-tag"><span class="dot purple"></span>Ultra Compressed</div>
+        <div class="preset-tag"><span class="dot teal"></span>DVD NTSC / PAL</div>
+        <div class="preset-tag"><span class="dot teal"></span>MP3 320kbps</div>
+        <div class="preset-tag"><span class="dot teal"></span>FLAC Lossless</div>
+        <div class="preset-tag"><span class="dot teal"></span>AAC 256kbps</div>
+        <div class="preset-tag"><span class="dot green"></span>Opus Music</div>
+        <div class="preset-tag"><span class="dot green"></span>WAV 16-bit</div>
+        <div class="preset-tag"><span class="dot purple"></span>Screencast</div>
+        <div class="preset-tag"><span class="dot purple"></span>Surveillance</div>
+        <div class="preset-tag"><span class="dot yellow"></span>Slow Motion 60fps</div>
+        <div class="preset-tag"><span class="dot yellow"></span>Podcast MP3</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── App Preview ─────────────────────────────────────── -->
+  <section id="preview">
+    <div class="container section-center">
+      <div class="section-label">Preview</div>
+      <h2 class="section-title">Premium Dark Interface</h2>
+      <p class="section-desc">A meticulously crafted dark UI with purple, teal and green accents — designed for long editing sessions.</p>
+      <div class="mockup-wrap reveal">
+        <div class="mockup-glow"></div>
+        <div class="mockup-frame">
+          <div class="mockup-bar">
+            <div class="mockup-dot r"></div>
+            <div class="mockup-dot y"></div>
+            <div class="mockup-dot g"></div>
+            <span style="flex:1; text-align:center; font-size:.75rem; color:#5A6478;">FFmpeg Studio v1.0.0</span>
+          </div>
+          <div class="mockup-content">
+            <div class="mockup-sidebar">
+              <div class="mockup-sidebar-item active">⚡ Presets</div>
+              <div class="mockup-sidebar-item">🔄 Convert</div>
+              <div class="mockup-sidebar-item">✂️ Trim</div>
+              <div class="mockup-sidebar-item">🎵 Audio</div>
+              <div class="mockup-sidebar-item">🎨 Filters</div>
+              <div class="mockup-sidebar-item">🔗 Merge</div>
+              <div class="mockup-sidebar-item">📐 Resize</div>
+              <div class="mockup-sidebar-item">📸 Screenshots</div>
+              <div class="mockup-sidebar-item">📝 Metadata</div>
+              <div class="mockup-sidebar-item">⌨️ Advanced</div>
+              <div class="mockup-sidebar-item">ℹ️ About</div>
+            </div>
+            <div class="mockup-main">
+              <h4>Encoding Presets</h4>
+              <div class="mockup-row">
+                <div class="mockup-input"></div>
+                <div class="mockup-btn-sm"></div>
+              </div>
+              <div class="mockup-row">
+                <div class="mockup-input"></div>
+                <div class="mockup-input" style="max-width:140px;"></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:16px;">
+                <div style="background:#161B26;border:1px solid #1E2738;border-radius:8px;padding:10px;font-size:.72rem;color:#8892A8;">📱 Android</div>
+                <div style="background:rgba(108,92,231,.1);border:1px solid rgba(108,92,231,.3);border-radius:8px;padding:10px;font-size:.72rem;color:#6C5CE7;">🎬 YouTube</div>
+                <div style="background:#161B26;border:1px solid #1E2738;border-radius:8px;padding:10px;font-size:.72rem;color:#8892A8;">📸 Instagram</div>
+              </div>
+              <div class="mockup-progress">
+                <div class="mockup-progress-bar"></div>
+              </div>
+              <div style="margin-top:8px;font-size:.7rem;color:#00D68F;text-align:right;">72% — Encoding...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Download CTA ────────────────────────────────────── -->
+  <section id="download" class="cta">
+    <div class="container">
+      <div class="cta-box reveal">
+        <h2>Ready to Get Started?</h2>
+        <p>Download FFmpeg Studio for free. Windows 10/11 (64-bit). Open source under MIT License.</p>
+        <div class="cta-buttons">
+          <a class="btn-primary" href="https://github.com/AlfonsoCifuentes/FFmpegStudio/releases" target="_blank" rel="noopener">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download Installer (.exe)
+          </a>
+          <a class="btn-secondary" href="https://github.com/AlfonsoCifuentes/FFmpegStudio" target="_blank" rel="noopener">
+            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            Source Code
+          </a>
+        </div>
+        <div class="dl-info">
+          <span>🖥️ Windows 10/11 x64</span>
+          <span>📦 ~33 MB</span>
+          <span>⚖️ MIT License</span>
+          <span>🔒 No Telemetry</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Tech Stack ──────────────────────────────────────── -->
+  <section style="background: #0D1017; padding: 60px 0;">
+    <div class="container section-center">
+      <div class="section-label">Built With</div>
+      <h2 class="section-title" style="font-size:1.6rem; margin-bottom:32px;">Trusted Technologies</h2>
+      <div class="tech-grid reveal">
+        <div class="tech-item">
+          <div class="tech-name">Python 3</div>
+          <div class="tech-desc">Application Language</div>
+        </div>
+        <div class="tech-item">
+          <div class="tech-name">PySide6 (Qt6)</div>
+          <div class="tech-desc">GUI Framework</div>
+        </div>
+        <div class="tech-item">
+          <div class="tech-name">FFmpeg</div>
+          <div class="tech-desc">Media Engine</div>
+        </div>
+        <div class="tech-item">
+          <div class="tech-name">PyInstaller</div>
+          <div class="tech-desc">Exe Bundling</div>
+        </div>
+        <div class="tech-item">
+          <div class="tech-name">Inno Setup</div>
+          <div class="tech-desc">Windows Installer</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Requirements ────────────────────────────────────── -->
+  <section style="padding: 60px 0;">
+    <div class="container section-center">
+      <div class="section-label">Requirements</div>
+      <h2 class="section-title" style="font-size:1.6rem; margin-bottom:32px;">Before You Install</h2>
+      <div style="display:flex;gap:20px;justify-content:center;flex-wrap:wrap;max-width:700px;margin:0 auto;">
+        <div class="feature-card" style="flex:1;min-width:260px;">
+          <div class="feature-icon teal">🖥️</div>
+          <h3>Windows 10 / 11</h3>
+          <p>64-bit operating system required. Tested on Windows 10 21H2+ and Windows 11.</p>
+        </div>
+        <div class="feature-card" style="flex:1;min-width:260px;">
+          <div class="feature-icon green">🎬</div>
+          <h3>FFmpeg Installed</h3>
+          <p>FFmpeg must be in your system PATH. <a href="https://www.gyan.dev/ffmpeg/builds/" target="_blank" rel="noopener" style="color:#00B4D8;">Download from gyan.dev</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Footer ──────────────────────────────────────────── -->
+  <footer>
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/AlfonsoCifuentes/FFmpegStudio" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/AlfonsoCifuentes/FFmpegStudio/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/AlfonsoCifuentes/FFmpegStudio/issues" target="_blank" rel="noopener">Report Issue</a>
+        <a href="https://github.com/AlfonsoCifuentes/FFmpegStudio/blob/master/LICENSE" target="_blank" rel="noopener">License</a>
+      </div>
+      <p class="footer-copy">
+        &copy; 2025–2026 Alfonso Cifuentes Alonso &middot; FFmpeg is a trademark of Fabrice Bellard. Not affiliated with the FFmpeg project.
+      </p>
+    </div>
+  </footer>
+
+  <!-- ─── Scroll Reveal ───────────────────────────────────── -->
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
+    }, { threshold: 0.12 });
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>

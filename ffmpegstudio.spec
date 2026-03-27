@@ -24,7 +24,6 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         'tkinter', '_tkinter', 'unittest',
-        'email', 'html', 'http', 'xml',
         'pydoc', 'doctest',
     ],
     noarchive=False,
