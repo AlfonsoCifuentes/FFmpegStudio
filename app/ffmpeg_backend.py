@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import shutil
+import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -65,14 +66,95 @@ class MediaInfo:
         return f"{h:02d}:{m:02d}:{s:06.3f}"
 
 
+def _config_dir() -> str:
+    """Return the app config directory, creating it if needed."""
+    d = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "FFmpegStudio")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _config_file() -> str:
+    return os.path.join(_config_dir(), "config.json")
+
+
+def _load_config() -> dict:
+    try:
+        with open(_config_file(), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_config(cfg: dict):
+    with open(_config_file(), "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+
+
+def get_custom_ffmpeg_dir() -> str:
+    """Get user-configured FFmpeg directory."""
+    return _load_config().get("ffmpeg_dir", "")
+
+
+def set_custom_ffmpeg_dir(path: str):
+    """Save user-configured FFmpeg directory."""
+    cfg = _load_config()
+    cfg["ffmpeg_dir"] = path
+    _save_config(cfg)
+
+
+def _common_ffmpeg_paths() -> list[str]:
+    """Return common FFmpeg installation directories on Windows."""
+    dirs = []
+    for env_var in ("LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "USERPROFILE"):
+        base = os.environ.get(env_var, "")
+        if base:
+            dirs.append(os.path.join(base, "ffmpeg", "bin"))
+            dirs.append(os.path.join(base, "ffmpeg"))
+    dirs.append(os.path.join("C:\\", "ffmpeg", "bin"))
+    dirs.append(os.path.join("C:\\", "ffmpeg"))
+    return dirs
+
+
+def _find_executable(name: str) -> Optional[str]:
+    """Find an executable searching custom dir, PATH, common locations, and app dir."""
+    exe_name = f"{name}.exe" if os.name == "nt" else name
+
+    # 1. User-configured directory
+    custom = get_custom_ffmpeg_dir()
+    if custom and os.path.isdir(custom):
+        candidate = os.path.join(custom, exe_name)
+        if os.path.isfile(candidate):
+            return candidate
+
+    # 2. System PATH
+    found = shutil.which(name)
+    if found:
+        return found
+
+    # 3. Common Windows locations
+    if os.name == "nt":
+        for d in _common_ffmpeg_paths():
+            candidate = os.path.join(d, exe_name)
+            if os.path.isfile(candidate):
+                return candidate
+
+    # 4. Next to application executable (portable installs)
+    if getattr(sys, "frozen", False):
+        candidate = os.path.join(os.path.dirname(sys.executable), exe_name)
+        if os.path.isfile(candidate):
+            return candidate
+
+    return None
+
+
 def find_ffmpeg() -> Optional[str]:
-    """Find ffmpeg executable in PATH."""
-    return shutil.which("ffmpeg")
+    """Find ffmpeg executable: custom path > PATH > common locations > app dir."""
+    return _find_executable("ffmpeg")
 
 
 def find_ffprobe() -> Optional[str]:
-    """Find ffprobe executable in PATH."""
-    return shutil.which("ffprobe")
+    """Find ffprobe executable: custom path > PATH > common locations > app dir."""
+    return _find_executable("ffprobe")
 
 
 def probe_file(filepath: str) -> Optional[MediaInfo]:
@@ -313,6 +395,85 @@ class FFmpegWorker(QThread):
                 self.finished_error.emit(f"ffmpeg exited with code {proc.returncode}")
         except Exception as e:
             self.finished_error.emit(str(e))
+
+
+class BatchFFmpegWorker(QThread):
+    """Runs ffmpeg for multiple files sequentially."""
+
+    batch_progress = Signal(int, int)  # (current_1based, total)
+    progress = Signal(float)           # 0.0 - 100.0 overall
+    log_output = Signal(str)
+    finished_ok = Signal(str)
+    finished_error = Signal(str)
+
+    def __init__(self, tasks: list[tuple[list, float]], parent=None):
+        """tasks: list of (ffmpeg_args, duration) tuples."""
+        super().__init__(parent)
+        self.tasks = tasks
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        ffmpeg = find_ffmpeg()
+        if not ffmpeg:
+            self.finished_error.emit("ffmpeg not found. Configure FFmpeg path in the sidebar.")
+            return
+
+        total = len(self.tasks)
+        errors = []
+
+        for i, (args, duration) in enumerate(self.tasks):
+            if self._cancelled:
+                self.finished_error.emit("Cancelled by user.")
+                return
+
+            self.batch_progress.emit(i + 1, total)
+            self.log_output.emit(f"\n{'='*50}\n  File {i + 1} / {total}\n{'='*50}\n")
+
+            cmd = [ffmpeg, "-y", "-hide_banner"] + args
+            self.log_output.emit(f"$ {' '.join(cmd)}\n")
+
+            try:
+                creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                proc = subprocess.Popen(
+                    cmd,
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                    creationflags=creation_flags,
+                )
+
+                time_re = re.compile(r"time=(\d+):(\d+):(\d+\.?\d*)")
+                for line in proc.stderr:
+                    if self._cancelled:
+                        proc.kill()
+                        proc.wait()
+                        self.finished_error.emit("Cancelled by user.")
+                        return
+                    self.log_output.emit(line)
+                    match = time_re.search(line)
+                    if match and duration > 0:
+                        h, m, s = float(match.group(1)), float(match.group(2)), float(match.group(3))
+                        current = h * 3600 + m * 60 + s
+                        file_pct = min(1.0, current / duration)
+                        overall = ((i + file_pct) / total) * 100
+                        self.progress.emit(overall)
+
+                proc.wait()
+                if proc.returncode != 0:
+                    errors.append(f"File {i + 1}: exit code {proc.returncode}")
+
+            except Exception as e:
+                errors.append(f"File {i + 1}: {str(e)}")
+
+        if errors:
+            self.progress.emit(100.0)
+            self.finished_error.emit(f"Completed with {len(errors)} error(s): " + "; ".join(errors))
+        else:
+            self.progress.emit(100.0)
+            self.finished_ok.emit(f"Batch complete: {total} file{'s' if total > 1 else ''} processed!")
 
 
 def build_convert_command(

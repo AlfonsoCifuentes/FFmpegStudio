@@ -23,6 +23,7 @@ class FileDropZone(QFrame):
     """Drag-and-drop area for selecting input files."""
 
     file_dropped = Signal(str)
+    files_dropped = Signal(list)
 
     def __init__(self, accept_multiple=False, file_filter="All Files (*)", parent=None):
         super().__init__(parent)
@@ -32,6 +33,7 @@ class FileDropZone(QFrame):
         self._accept_multiple = accept_multiple
         self._file_filter = file_filter
         self._filepath = ""
+        self._filepaths = []
 
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
@@ -66,19 +68,50 @@ class FileDropZone(QFrame):
     def filepath(self):
         return self._filepath
 
+    @property
+    def filepaths(self):
+        return self._filepaths
+
     def set_file(self, path: str):
         self._filepath = path
+        self._filepaths = [path]
         name = os.path.basename(path)
         self._file_label.setText(f"✅  {name}")
         self._file_label.show()
         self._text_label.setText("File selected")
         self._sub_label.setText("Click or drop to change")
         self.file_dropped.emit(path)
+        self.files_dropped.emit([path])
+
+    def set_files(self, paths: list[str]):
+        if not paths:
+            return
+        self._filepaths = list(paths)
+        self._filepath = paths[0]
+        n = len(paths)
+        if n == 1:
+            name = os.path.basename(paths[0])
+            self._file_label.setText(f"✅  {name}")
+        else:
+            names = ", ".join(os.path.basename(f) for f in paths[:2])
+            if n > 2:
+                names += f" + {n - 2} more"
+            self._file_label.setText(f"✅  {n} files: {names}")
+        self._file_label.show()
+        self._text_label.setText(f"{n} file{'s' if n > 1 else ''} selected")
+        self._sub_label.setText("Click or drop to change")
+        self.file_dropped.emit(paths[0])
+        self.files_dropped.emit(paths)
 
     def mousePressEvent(self, event):
-        path, _ = QFileDialog.getOpenFileName(self, "Select File", "", self._file_filter)
-        if path:
-            self.set_file(path)
+        if self._accept_multiple:
+            paths, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", self._file_filter)
+            if paths:
+                self.set_files(paths)
+        else:
+            path, _ = QFileDialog.getOpenFileName(self, "Select File", "", self._file_filter)
+            if path:
+                self.set_file(path)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -92,9 +125,14 @@ class FileDropZone(QFrame):
         self.setStyleSheet(DROP_ZONE_STYLE)
         urls = event.mimeData().urls()
         if urls:
-            path = urls[0].toLocalFile()
-            if os.path.isfile(path):
-                self.set_file(path)
+            if self._accept_multiple:
+                paths = [u.toLocalFile() for u in urls if os.path.isfile(u.toLocalFile())]
+                if paths:
+                    self.set_files(paths)
+            else:
+                path = urls[0].toLocalFile()
+                if os.path.isfile(path):
+                    self.set_file(path)
 
 
 class MultiFileDropZone(QFrame):

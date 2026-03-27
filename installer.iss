@@ -16,11 +16,11 @@ AppPublisherURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-OutputDir=C:\Users\Fonnzer\FFmpegStudio\output
+OutputDir={#SourcePath}\output
 OutputBaseFilename=FFmpegStudio_Setup
-SetupIconFile=C:\Users\Fonnzer\FFmpegStudio\assets\icon.ico
-WizardImageFile=C:\Users\Fonnzer\FFmpegStudio\assets\installer_wizard.bmp
-WizardSmallImageFile=C:\Users\Fonnzer\FFmpegStudio\assets\installer_small.bmp
+SetupIconFile={#SourcePath}\assets\icon.ico
+WizardImageFile={#SourcePath}\assets\installer_wizard.bmp
+WizardSmallImageFile={#SourcePath}\assets\installer_small.bmp
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -47,7 +47,7 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "C:\Users\Fonnzer\FFmpegStudio\dist\FFmpegStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourcePath}\dist\FFmpegStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

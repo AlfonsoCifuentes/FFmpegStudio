@@ -8,6 +8,7 @@ from PySide6.QtGui import QIcon, QFont, QColor, QPainter, QLinearGradient, QPen,
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QPushButton, QStackedWidget, QFrame, QSizePolicy, QGraphicsDropShadowEffect,
+    QFileDialog, QMessageBox,
 )
 
 
@@ -24,8 +25,9 @@ from app.styles import (
     BG_DARKEST, BG_DARK, BG_CARD, BG_ELEVATED, BG_HOVER,
     ACCENT, ACCENT_HOVER, ACCENT2, ACCENT3,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    BORDER, RADIUS,
+    BORDER, RADIUS, DANGER,
 )
+from app.ffmpeg_backend import find_ffmpeg, set_custom_ffmpeg_dir
 from app.pages.convert import ConvertPage
 from app.pages.trim import TrimPage
 from app.pages.audio import AudioPage
@@ -265,13 +267,12 @@ class MainWindow(QMainWindow):
 
         sidebar_layout.addStretch()
 
-        # Bottom info
-        info = QLabel("Requires ffmpeg in PATH")
-        info.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 10px; padding: 12px 16px; background: transparent;"
-        )
-        info.setAlignment(Qt.AlignCenter)
-        sidebar_layout.addWidget(info)
+        # FFmpeg status (clickable)
+        self._ffmpeg_btn = QPushButton()
+        self._ffmpeg_btn.setCursor(Qt.PointingHandCursor)
+        self._ffmpeg_btn.clicked.connect(self._configure_ffmpeg)
+        sidebar_layout.addWidget(self._ffmpeg_btn)
+        self._update_ffmpeg_status()
 
         root.addWidget(sidebar)
 
@@ -301,6 +302,48 @@ class MainWindow(QMainWindow):
 
         for i, (icon_name, _, _) in enumerate(PAGE_DEFS):
             self._nav_buttons[i].set_active(icon_name == name)
+
+    def _update_ffmpeg_status(self):
+        ffmpeg = find_ffmpeg()
+        if ffmpeg:
+            self._ffmpeg_btn.setText("✓ FFmpeg ready")
+            self._ffmpeg_btn.setToolTip(f"Using: {ffmpeg}\nClick to change")
+            self._ffmpeg_btn.setStyleSheet(
+                f"QPushButton {{ color: {ACCENT3}; font-size: 10px; padding: 8px 16px; "
+                f"background: transparent; border: none; text-align: center; }}"
+                f"QPushButton:hover {{ color: {TEXT_PRIMARY}; }}"
+            )
+        else:
+            self._ffmpeg_btn.setText("✗ FFmpeg not found — Click to configure")
+            self._ffmpeg_btn.setToolTip("Click to select FFmpeg installation directory")
+            self._ffmpeg_btn.setStyleSheet(
+                f"QPushButton {{ color: {DANGER}; font-size: 10px; padding: 8px 16px; "
+                f"background: transparent; border: none; text-align: center; font-weight: 700; }}"
+                f"QPushButton:hover {{ color: {TEXT_PRIMARY}; }}"
+            )
+
+    def _configure_ffmpeg(self):
+        path = QFileDialog.getExistingDirectory(
+            self, "Select FFmpeg Directory (folder containing ffmpeg.exe)",
+            "", QFileDialog.ShowDirsOnly,
+        )
+        if not path:
+            return
+        exe = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+        if os.path.isfile(os.path.join(path, exe)):
+            set_custom_ffmpeg_dir(path)
+            self._update_ffmpeg_status()
+        elif os.path.isfile(os.path.join(path, "bin", exe)):
+            set_custom_ffmpeg_dir(os.path.join(path, "bin"))
+            self._update_ffmpeg_status()
+        else:
+            QMessageBox.warning(
+                self, "FFmpeg Not Found",
+                f"No ffmpeg executable found in:\n{path}\n\n"
+                "Please select the directory containing ffmpeg.exe\n"
+                "(usually the 'bin' folder inside your FFmpeg installation).\n\n"
+                "Download FFmpeg from: https://ffmpeg.org/download.html",
+            )
 
     def closeEvent(self, event: QCloseEvent):
         """Ensure worker threads are stopped before closing."""

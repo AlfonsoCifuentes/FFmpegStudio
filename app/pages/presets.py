@@ -1,5 +1,6 @@
 """Presets page – one-click encoding with predefined profiles."""
 
+import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -9,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.presets import PRESETS, PRESET_CATEGORIES
-from app.ffmpeg_backend import FFmpegWorker, probe_file
+from app.ffmpeg_backend import FFmpegWorker, BatchFFmpegWorker, probe_file
 from app.widgets.common import FileDropZone, OutputSelector, ProcessRunner, SectionHeader
 from app.styles import (
     ACCENT, ACCENT2, ACCENT3, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
@@ -23,6 +24,7 @@ class PresetsPage(QWidget):
         self._worker = None
         self._media_info = None
         self._selected_preset = None
+        self._input_files = []
 
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
@@ -49,9 +51,11 @@ class PresetsPage(QWidget):
         layout.addSpacing(4)
         layout.addWidget(SectionHeader("Input"))
         self.drop = FileDropZone(
+            accept_multiple=True,
             file_filter="Media Files (*.mp4 *.mkv *.avi *.mov *.webm *.flv *.ts *.wmv *.mpg *.mp3 *.aac *.flac *.wav *.ogg);;All Files (*)"
         )
         self.drop.file_dropped.connect(self._on_file)
+        self.drop.files_dropped.connect(self._on_files)
         layout.addWidget(self.drop)
 
         self.info_label = QLabel("")
@@ -188,22 +192,41 @@ class PresetsPage(QWidget):
         else:
             self.output.suggest_path(path)
 
+    def _on_files(self, paths):
+        self._input_files = paths
+
     def _start(self):
         inp = self.drop.filepath
-        out = self.output.output_path
         if not inp:
             self.runner.set_error("No input file selected.")
-            return
-        if not out:
-            self.runner.set_error("No output path specified.")
             return
         if not self._selected_preset:
             self.runner.set_error("No preset selected.")
             return
 
-        args = ["-i", inp] + list(self._selected_preset.ffmpeg_args) + [out]
-        dur = self._media_info.duration if self._media_info else 0
-        self._worker = FFmpegWorker(args, dur)
-        self.runner.connect_worker(self._worker)
-        self.runner.set_running(True)
-        self._worker.start()
+        if len(self._input_files) > 1:
+            # Batch mode
+            tasks = []
+            for f in self._input_files:
+                info = probe_file(f)
+                dur = info.duration if info else 0
+                stem = os.path.splitext(f)[0]
+                out = f"{stem}_output{self._selected_preset.extension}"
+                args = ["-i", f] + list(self._selected_preset.ffmpeg_args) + [out]
+                tasks.append((args, dur))
+            self._worker = BatchFFmpegWorker(tasks)
+            self.runner.connect_worker(self._worker)
+            self.runner.set_running(True)
+            self._worker.start()
+        else:
+            # Single file mode
+            out = self.output.output_path
+            if not out:
+                self.runner.set_error("No output path specified.")
+                return
+            args = ["-i", inp] + list(self._selected_preset.ffmpeg_args) + [out]
+            dur = self._media_info.duration if self._media_info else 0
+            self._worker = FFmpegWorker(args, dur)
+            self.runner.connect_worker(self._worker)
+            self.runner.set_running(True)
+            self._worker.start()

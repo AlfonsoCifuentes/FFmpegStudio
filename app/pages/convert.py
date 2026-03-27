@@ -1,5 +1,7 @@
 """Convert page – format conversion with full codec/bitrate/resolution control."""
 
+import os
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
@@ -9,7 +11,7 @@ from PySide6.QtWidgets import (
 from app.ffmpeg_backend import (
     VIDEO_CODECS, AUDIO_CODECS, OUTPUT_FORMATS, RESOLUTIONS,
     FRAME_RATES, SAMPLE_RATES, AUDIO_CHANNELS, ENCODING_PRESETS,
-    build_convert_command, FFmpegWorker, probe_file,
+    build_convert_command, FFmpegWorker, BatchFFmpegWorker, probe_file,
 )
 from app.widgets.common import (
     FileDropZone, OutputSelector, ParamRow, ProcessRunner,
@@ -23,6 +25,7 @@ class ConvertPage(QWidget):
         super().__init__(parent)
         self._worker = None
         self._media_info = None
+        self._input_files = []
 
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
@@ -45,8 +48,9 @@ class ConvertPage(QWidget):
         # Input
         layout.addSpacing(8)
         layout.addWidget(SectionHeader("Input"))
-        self.drop = FileDropZone(file_filter="Media Files (*.mp4 *.mkv *.avi *.mov *.webm *.flv *.ts *.wmv *.mpg *.mp3 *.aac *.flac *.wav *.ogg);;All Files (*)")
+        self.drop = FileDropZone(accept_multiple=True, file_filter="Media Files (*.mp4 *.mkv *.avi *.mov *.webm *.flv *.ts *.wmv *.mpg *.mp3 *.aac *.flac *.wav *.ogg);;All Files (*)")
         self.drop.file_dropped.connect(self._on_file)
+        self.drop.files_dropped.connect(self._on_files)
         layout.addWidget(self.drop)
 
         self.info_label = QLabel("")
@@ -142,23 +146,17 @@ class ConvertPage(QWidget):
         fmt_ext = self.fmt_combo.currentData()
         self.output.suggest_path(path, fmt_ext)
 
+    def _on_files(self, paths):
+        self._input_files = paths
+
     def _on_format_change(self):
         ext = self.fmt_combo.currentData()
         self.output.set_suffix(ext)
         if self.drop.filepath:
             self.output.suggest_path(self.drop.filepath, ext)
 
-    def _start(self):
-        inp = self.drop.filepath
-        out = self.output.output_path
-        if not inp:
-            self.runner.set_error("No input file selected.")
-            return
-        if not out:
-            self.runner.set_error("No output path specified.")
-            return
-
-        args = build_convert_command(
+    def _build_args(self, inp, out):
+        return build_convert_command(
             input_path=inp,
             output_path=out,
             video_codec=self.vcodec.currentData() if self.vcodec.currentData() != "copy" else "copy",
@@ -174,8 +172,36 @@ class ConvertPage(QWidget):
             extra_args=self.extra.text().strip(),
         )
 
-        dur = self._media_info.duration if self._media_info else 0
-        self._worker = FFmpegWorker(args, dur)
-        self.runner.connect_worker(self._worker)
-        self.runner.set_running(True)
-        self._worker.start()
+    def _start(self):
+        inp = self.drop.filepath
+        if not inp:
+            self.runner.set_error("No input file selected.")
+            return
+
+        fmt_ext = self.fmt_combo.currentData()
+
+        if len(self._input_files) > 1:
+            # Batch mode
+            tasks = []
+            for f in self._input_files:
+                info = probe_file(f)
+                dur = info.duration if info else 0
+                stem = os.path.splitext(f)[0]
+                out = f"{stem}_output{fmt_ext}"
+                tasks.append((self._build_args(f, out), dur))
+            self._worker = BatchFFmpegWorker(tasks)
+            self.runner.connect_worker(self._worker)
+            self.runner.set_running(True)
+            self._worker.start()
+        else:
+            # Single file mode
+            out = self.output.output_path
+            if not out:
+                self.runner.set_error("No output path specified.")
+                return
+            args = self._build_args(inp, out)
+            dur = self._media_info.duration if self._media_info else 0
+            self._worker = FFmpegWorker(args, dur)
+            self.runner.connect_worker(self._worker)
+            self.runner.set_running(True)
+            self._worker.start()
