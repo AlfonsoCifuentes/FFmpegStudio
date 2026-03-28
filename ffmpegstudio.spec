@@ -16,8 +16,12 @@ a = Analysis(
         (os.path.join(ROOT, 'assets', 'logo.png'), 'assets'),
     ],
     hiddenimports=[
+        'PySide6.QtCore',
+        'PySide6.QtGui',
+        'PySide6.QtWidgets',
         'PySide6.QtSvg',
         'PySide6.QtSvgWidgets',
+        'PySide6.QtNetwork',
     ],
     hookspath=[],
     hooksconfig={},

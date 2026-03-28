@@ -74,12 +74,8 @@ class AboutPage(QWidget):
         h_layout.setSpacing(10)
 
         # Logo
-        import os, sys
-        if getattr(sys, "frozen", False):
-            base = sys._MEIPASS
-        else:
-            base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        logo_path = os.path.join(base, "assets", "logo.png")
+        from app.main_window import _asset_path
+        logo_path = _asset_path("logo.png")
         if os.path.exists(logo_path):
             logo_pix = QPixmap(logo_path)
             logo_lbl = QLabel()
