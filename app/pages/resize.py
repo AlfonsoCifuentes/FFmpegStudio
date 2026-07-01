@@ -1,14 +1,13 @@
 """Resize / Scale page."""
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, QScrollArea,
-    QFrame, QCheckBox, QComboBox,
+    QFrame,
 )
 
 from app.ffmpeg_backend import (
     RESOLUTIONS, build_resize_command, FFmpegWorker, probe_file,
-    OUTPUT_FORMATS,
+    OUTPUT_FORMATS, ensure_output_parent, output_overwrites_input,
 )
 from app.widgets.common import (
     FileDropZone, OutputSelector, ParamRow, ProcessRunner,
@@ -122,6 +121,14 @@ class ResizePage(QWidget):
             return
         if not out:
             self.runner.set_error("No output path specified.")
+            return
+        if output_overwrites_input(inp, out):
+            self.runner.set_error("Output path must be different from the input file.")
+            return
+        try:
+            ensure_output_parent(out)
+        except OSError as e:
+            self.runner.set_error(f"Could not create output folder: {e}")
             return
 
         # Determine resolution

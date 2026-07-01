@@ -1,14 +1,13 @@
 """Merge / Concatenate files page."""
 
-import os
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QLineEdit, QScrollArea,
-    QFrame, QCheckBox, QComboBox,
+    QWidget, QVBoxLayout, QLabel, QScrollArea,
+    QFrame, QCheckBox,
 )
 
 from app.ffmpeg_backend import (
-    build_merge_command, FFmpegWorker, OUTPUT_FORMATS, probe_file,
+    build_merge_command, FFmpegWorker, OUTPUT_FORMATS,
+    ensure_output_parent, output_overwrites_input,
 )
 from app.widgets.common import (
     MultiFileDropZone, OutputSelector, ParamRow, ProcessRunner,
@@ -90,6 +89,14 @@ class MergePage(QWidget):
             return
         if not out:
             self.runner.set_error("No output path specified.")
+            return
+        if any(output_overwrites_input(f, out) for f in files):
+            self.runner.set_error("Output path must be different from the input files.")
+            return
+        try:
+            ensure_output_parent(out)
+        except OSError as e:
+            self.runner.set_error(f"Could not create output folder: {e}")
             return
 
         args = build_merge_command(

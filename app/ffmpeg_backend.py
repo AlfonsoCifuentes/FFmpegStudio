@@ -3,13 +3,28 @@
 import json
 import os
 import re
+import shlex
 import subprocess
 import shutil
 import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
-from PySide6.QtCore import QObject, QProcess, Signal, QThread
+from PySide6.QtCore import Signal, QThread
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 @dataclass
@@ -112,38 +127,83 @@ def _common_ffmpeg_paths() -> list[str]:
             dirs.append(os.path.join(base, "ffmpeg"))
     dirs.append(os.path.join("C:\\", "ffmpeg", "bin"))
     dirs.append(os.path.join("C:\\", "ffmpeg"))
+    program_data = os.environ.get("PROGRAMDATA", "")
+    if program_data:
+        dirs.append(os.path.join(program_data, "chocolatey", "bin"))
     return dirs
 
 
-def _find_executable(name: str) -> Optional[str]:
-    """Find an executable searching custom dir, PATH, common locations, and app dir."""
+def _is_executable_candidate(path: str) -> bool:
+    if not path or not os.path.isfile(path):
+        return False
+    if os.name == "nt":
+        return os.path.splitext(path)[1].lower() == ".exe"
+    return os.access(path, os.X_OK)
+
+
+def _tool_reports_expected_version(path: str, name: str) -> bool:
+    """Return True only for real ffmpeg/ffprobe executables."""
+    if not _is_executable_candidate(path):
+        return False
+    try:
+        result = subprocess.run(
+            [path, "-version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    output = result.stdout or ""
+    return result.returncode == 0 and re.search(
+        rf"\b{re.escape(name)}\s+version\b", output, re.IGNORECASE
+    ) is not None
+
+
+def _candidate_paths(name: str) -> list[str]:
     exe_name = f"{name}.exe" if os.name == "nt" else name
+    candidates: list[str] = []
 
-    # 1. User-configured directory
     custom = get_custom_ffmpeg_dir()
-    if custom and os.path.isdir(custom):
-        candidate = os.path.join(custom, exe_name)
-        if os.path.isfile(candidate):
-            return candidate
+    if custom:
+        if os.path.isfile(custom):
+            candidates.append(custom)
+        elif os.path.isdir(custom):
+            candidates.append(os.path.join(custom, exe_name))
+            candidates.append(os.path.join(custom, "bin", exe_name))
 
-    # 2. System PATH
-    found = shutil.which(name)
-    if found:
-        return found
+    path_names = [exe_name]
+    if exe_name != name:
+        path_names.append(name)
+    for path_name in path_names:
+        found = shutil.which(path_name)
+        if found:
+            candidates.append(found)
 
-    # 3. Common Windows locations
     if os.name == "nt":
         for d in _common_ffmpeg_paths():
-            candidate = os.path.join(d, exe_name)
-            if os.path.isfile(candidate):
-                return candidate
+            candidates.append(os.path.join(d, exe_name))
 
-    # 4. Next to application executable (portable installs)
     if getattr(sys, "frozen", False):
-        candidate = os.path.join(os.path.dirname(sys.executable), exe_name)
-        if os.path.isfile(candidate):
-            return candidate
+        candidates.append(os.path.join(os.path.dirname(sys.executable), exe_name))
 
+    seen = set()
+    unique = []
+    for candidate in candidates:
+        normalized = os.path.normcase(os.path.abspath(candidate))
+        if normalized not in seen:
+            seen.add(normalized)
+            unique.append(candidate)
+    return unique
+
+
+def _find_executable(name: str) -> Optional[str]:
+    """Find a valid executable, ignoring same-named scripts/wrappers."""
+    for candidate in _candidate_paths(name):
+        if _tool_reports_expected_version(candidate, name):
+            return candidate
     return None
 
 
@@ -155,6 +215,16 @@ def find_ffmpeg() -> Optional[str]:
 def find_ffprobe() -> Optional[str]:
     """Find ffprobe executable: custom path > PATH > common locations > app dir."""
     return _find_executable("ffprobe")
+
+
+def valid_ffmpeg_directory(path: str) -> Optional[str]:
+    """Return the directory containing a valid ffmpeg executable under path, if any."""
+    exe_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    for directory in (path, os.path.join(path, "bin")):
+        candidate = os.path.join(directory, exe_name)
+        if _tool_reports_expected_version(candidate, "ffmpeg"):
+            return directory
+    return None
 
 
 def probe_file(filepath: str) -> Optional[MediaInfo]:
@@ -181,9 +251,9 @@ def probe_file(filepath: str) -> Optional[MediaInfo]:
             filepath=filepath,
             format_name=fmt.get("format_name", ""),
             format_long_name=fmt.get("format_long_name", ""),
-            duration=float(fmt.get("duration", 0)),
-            size=int(fmt.get("size", 0)),
-            bit_rate=int(fmt.get("bit_rate", 0)),
+            duration=_safe_float(fmt.get("duration", 0)),
+            size=_safe_int(fmt.get("size", 0)),
+            bit_rate=_safe_int(fmt.get("bit_rate", 0)),
             streams=data.get("streams", []),
         )
         return info
@@ -191,9 +261,50 @@ def probe_file(filepath: str) -> Optional[MediaInfo]:
         return None
 
 
+# Output format groups used by conversion helpers
+AUDIO_ONLY_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
+VIDEO_ONLY_EXTENSIONS = {".gif"}
+TEXT_SUBTITLE_CODECS = {
+    "ass", "ssa", "subrip", "text", "webvtt", "mov_text", "srt", "microdvd",
+    "mpl2", "subviewer", "subviewer1", "vplayer", "realtext", "jacosub",
+}
+
+
+DEFAULT_VIDEO_CODEC_BY_EXTENSION = {
+    ".avi": "mpeg4",
+    ".flv": "libx264",
+    ".mkv": "libx264",
+    ".mov": "libx264",
+    ".mp4": "libx264",
+    ".ts": "libx264",
+    ".webm": "libvpx-vp9",
+    ".wmv": "mpeg4",
+}
+
+
+DEFAULT_AUDIO_CODEC_BY_EXTENSION = {
+    ".aac": "aac",
+    ".avi": "libmp3lame",
+    ".flac": "flac",
+    ".flv": "aac",
+    ".m4a": "aac",
+    ".mkv": "aac",
+    ".mov": "aac",
+    ".mp3": "libmp3lame",
+    ".mp4": "aac",
+    ".ogg": "libvorbis",
+    ".opus": "libopus",
+    ".ts": "aac",
+    ".wav": "pcm_s16le",
+    ".webm": "libopus",
+    ".wma": "wmav2",
+}
+
+
 # Common video codecs
 VIDEO_CODECS = [
-    ("Auto (copy)", "copy"),
+    ("Auto (compatible)", ""),
+    ("Stream copy", "copy"),
     ("H.264 (libx264)", "libx264"),
     ("H.265/HEVC (libx265)", "libx265"),
     ("VP9 (libvpx-vp9)", "libvpx-vp9"),
@@ -207,7 +318,8 @@ VIDEO_CODECS = [
 
 # Common audio codecs
 AUDIO_CODECS = [
-    ("Auto (copy)", "copy"),
+    ("Auto (compatible)", ""),
+    ("Stream copy", "copy"),
     ("AAC", "aac"),
     ("MP3 (libmp3lame)", "libmp3lame"),
     ("Opus (libopus)", "libopus"),
@@ -354,7 +466,7 @@ class FFmpegWorker(QThread):
     def run(self):
         ffmpeg = find_ffmpeg()
         if not ffmpeg:
-            self.finished_error.emit("ffmpeg not found in PATH. Please install ffmpeg.")
+            self.finished_error.emit("ffmpeg not found or invalid. Configure FFmpeg path in the sidebar.")
             return
 
         cmd = [ffmpeg, "-y", "-hide_banner"] + self.args
@@ -365,7 +477,7 @@ class FFmpegWorker(QThread):
             proc = subprocess.Popen(
                 cmd,
                 stderr=subprocess.PIPE,
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 text=True,
                 creationflags=creation_flags,
             )
@@ -440,7 +552,7 @@ class BatchFFmpegWorker(QThread):
                 proc = subprocess.Popen(
                     cmd,
                     stderr=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
                     text=True,
                     creationflags=creation_flags,
                 )
@@ -462,6 +574,7 @@ class BatchFFmpegWorker(QThread):
                         self.progress.emit(overall)
 
                 proc.wait()
+                self.progress.emit(((i + 1) / total) * 100)
                 if proc.returncode != 0:
                     errors.append(f"File {i + 1}: exit code {proc.returncode}")
 
@@ -474,6 +587,81 @@ class BatchFFmpegWorker(QThread):
         else:
             self.progress.emit(100.0)
             self.finished_ok.emit(f"Batch complete: {total} file{'s' if total > 1 else ''} processed!")
+
+
+def _extension(path_or_suffix: str) -> str:
+    if not path_or_suffix:
+        return ""
+    suffix = path_or_suffix if path_or_suffix.startswith(".") else os.path.splitext(path_or_suffix)[1]
+    return suffix.lower()
+
+
+def _same_path(left: str, right: str) -> bool:
+    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
+
+
+def build_batch_output_path(input_path: str, output_dir: str, suffix: str) -> str:
+    """Build a batch output path inside output_dir without overwriting the source."""
+    ext = _extension(suffix) or os.path.splitext(input_path)[1]
+    source = os.path.abspath(input_path)
+    output = os.path.abspath(os.path.join(output_dir, f"{os.path.splitext(os.path.basename(input_path))[0]}{ext}"))
+
+    if _same_path(source, output):
+        stem = os.path.splitext(os.path.basename(input_path))[0]
+        output = os.path.abspath(os.path.join(output_dir, f"{stem}_output{ext}"))
+
+    return output
+
+
+def ensure_output_parent(output_path: str):
+    """Create the parent directory for an output file if it does not exist."""
+    parent = os.path.dirname(os.path.abspath(output_path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
+def output_overwrites_input(input_path: str, output_path: str) -> bool:
+    if not input_path or not output_path:
+        return False
+    return _same_path(input_path, output_path)
+
+
+def split_command_args(extra_args: str) -> list[str]:
+    """Split user-provided ffmpeg arguments while preserving Windows backslashes."""
+    lexer = shlex.shlex(extra_args, posix=True)
+    lexer.whitespace_split = True
+    lexer.escape = ""
+    return list(lexer)
+
+
+def _escape_subtitles_filter_path(path: str) -> str:
+    normalized = os.path.abspath(path).replace("\\", "/")
+    return normalized.replace(":", r"\:").replace("'", r"\'")
+
+
+def build_subtitles_filter(
+    input_path: str,
+    subtitle_path: str = "",
+    subtitle_stream_index: int | None = None,
+) -> str:
+    """Build a subtitles filter for external files or embedded text subtitle streams."""
+    source = subtitle_path or input_path
+    filter_value = f"subtitles=filename='{_escape_subtitles_filter_path(source)}'"
+    if subtitle_stream_index is not None:
+        filter_value += f":si={int(subtitle_stream_index)}"
+    return filter_value
+
+
+def _auto_video_codec(output_ext: str) -> str:
+    if output_ext in AUDIO_ONLY_EXTENSIONS or output_ext in VIDEO_ONLY_EXTENSIONS:
+        return ""
+    return DEFAULT_VIDEO_CODEC_BY_EXTENSION.get(output_ext, "")
+
+
+def _auto_audio_codec(output_ext: str) -> str:
+    if output_ext in VIDEO_ONLY_EXTENSIONS:
+        return ""
+    return DEFAULT_AUDIO_CODEC_BY_EXTENSION.get(output_ext, "")
 
 
 def build_convert_command(
@@ -490,32 +678,58 @@ def build_convert_command(
     preset: str = "",
     crf: str = "",
     extra_args: str = "",
+    burn_subtitles: bool = False,
+    subtitle_path: str = "",
+    subtitle_stream_index: int | None = None,
 ) -> list[str]:
     """Build an ffmpeg conversion command from parameters."""
-    args = ["-i", input_path]
+    output_ext = _extension(output_path)
+    video_codec = video_codec or _auto_video_codec(output_ext)
+    audio_codec = audio_codec or _auto_audio_codec(output_ext)
+    has_video_output = output_ext not in AUDIO_ONLY_EXTENSIONS
+    has_audio_output = output_ext not in VIDEO_ONLY_EXTENSIONS
+    should_burn_subtitles = burn_subtitles and (bool(subtitle_path) or subtitle_stream_index is not None)
 
-    if video_codec:
+    if should_burn_subtitles and not has_video_output:
+        raise ValueError("Subtitle burn-in requires a video output format.")
+
+    if should_burn_subtitles and video_codec == "copy":
+        video_codec = _auto_video_codec(output_ext) or "libx264"
+
+    args = ["-i", input_path]
+    args += ["-sn"]
+
+    if not has_video_output:
+        args += ["-vn"]
+    elif video_codec:
         args += ["-c:v", video_codec]
-    if audio_codec:
+
+    if should_burn_subtitles:
+        args += ["-vf", build_subtitles_filter(input_path, subtitle_path, subtitle_stream_index)]
+
+    if not has_audio_output:
+        args += ["-an"]
+    elif audio_codec:
         args += ["-c:a", audio_codec]
-    if video_bitrate:
+
+    if video_bitrate and has_video_output:
         args += ["-b:v", video_bitrate]
-    if audio_bitrate:
+    if audio_bitrate and has_audio_output:
         args += ["-b:a", audio_bitrate]
-    if resolution:
+    if resolution and has_video_output:
         args += ["-s", resolution]
-    if frame_rate:
+    if frame_rate and has_video_output:
         args += ["-r", frame_rate]
-    if sample_rate:
+    if sample_rate and has_audio_output:
         args += ["-ar", sample_rate]
-    if channels:
+    if channels and has_audio_output:
         args += ["-ac", channels]
-    if preset:
+    if preset and has_video_output:
         args += ["-preset", preset]
-    if crf:
+    if crf and has_video_output:
         args += ["-crf", crf]
     if extra_args:
-        args += extra_args.split()
+        args += split_command_args(extra_args)
 
     args.append(output_path)
     return args

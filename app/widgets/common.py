@@ -3,12 +3,12 @@
 import os
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QMimeData
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QPainter, QColor, QFont, QPen
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QFrame, QLabel, QVBoxLayout, QHBoxLayout, QPushButton,
     QFileDialog, QProgressBar, QPlainTextEdit, QWidget,
-    QComboBox, QLineEdit, QSizePolicy, QGraphicsDropShadowEffect,
+    QComboBox, QLineEdit,
 )
 
 from app.styles import (
@@ -217,11 +217,12 @@ class Card(QFrame):
 
 # ── Output selector ──────────────────────────────────────────────
 class OutputSelector(QWidget):
-    """Widget for selecting output file path."""
+    """Widget for selecting an output file path or output folder."""
 
     def __init__(self, default_suffix=".mp4", parent=None):
         super().__init__(parent)
         self._suffix = default_suffix
+        self._directory_mode = False
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -236,8 +237,20 @@ class OutputSelector(QWidget):
 
         # Alias for compatible access
         self.line = self.path_edit
+        self._apply_mode_text()
 
     def _browse(self):
+        if self._directory_mode:
+            start_dir = self.output_path
+            if start_dir and os.path.isfile(start_dir):
+                start_dir = os.path.dirname(start_dir)
+            path = QFileDialog.getExistingDirectory(
+                self, "Select Output Folder", start_dir, QFileDialog.ShowDirsOnly
+            )
+            if path:
+                self.path_edit.setText(path)
+            return
+
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Output", "", f"Media Files (*{self._suffix});;All Files (*)"
         )
@@ -248,6 +261,27 @@ class OutputSelector(QWidget):
     def output_path(self) -> str:
         return self.path_edit.text().strip()
 
+    def is_directory_mode(self) -> bool:
+        return self._directory_mode
+
+    def set_directory_mode(self, enabled: bool):
+        enabled = bool(enabled)
+        if self._directory_mode == enabled:
+            return
+        current = self.output_path
+        self._directory_mode = enabled
+        if enabled and current and not os.path.isdir(current):
+            self.path_edit.setText(str(Path(current).parent))
+        self._apply_mode_text()
+
+    def _apply_mode_text(self):
+        if self._directory_mode:
+            self.path_edit.setPlaceholderText("Output folder...")
+            self.browse_btn.setText("Select Folder...")
+        else:
+            self.path_edit.setPlaceholderText("Output file path...")
+            self.browse_btn.setText("Browse...")
+
     def suggest_path(self, input_path: str, suffix: str = ""):
         """Auto-generate output path from input path."""
         if not input_path:
@@ -256,6 +290,14 @@ class OutputSelector(QWidget):
         ext = suffix or self._suffix
         out = p.parent / f"{p.stem}_output{ext}"
         self.path_edit.setText(str(out))
+
+    def suggest_directory(self, input_path: str, force: bool = False):
+        """Suggest the input file parent as output folder."""
+        if not input_path:
+            return
+        if self.output_path and not force:
+            return
+        self.path_edit.setText(str(Path(input_path).parent))
 
     def set_suffix(self, suffix: str):
         self._suffix = suffix
@@ -274,8 +316,12 @@ class ParamRow(QWidget):
         label = QLabel(label_text)
         label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: 600; min-width: 130px; background: transparent;")
         label.setFixedWidth(140)
+        self.label = label
         layout.addWidget(label)
         layout.addWidget(widget, 1)
+
+    def set_label(self, label_text: str):
+        self.label.setText(label_text)
 
 
 # ── Log Console ──────────────────────────────────────────────────

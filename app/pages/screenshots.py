@@ -1,13 +1,13 @@
 """Screenshots / Frame Extraction page."""
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, QScrollArea,
-    QFrame, QComboBox, QSpinBox,
+    QFrame, QSpinBox,
 )
 
 from app.ffmpeg_backend import (
-    build_screenshot_command, FFmpegWorker, probe_file,
+    build_screenshot_command, ensure_output_parent, output_overwrites_input,
+    FFmpegWorker, probe_file,
 )
 from app.widgets.common import (
     FileDropZone, OutputSelector, ParamRow, ProcessRunner,
@@ -142,6 +142,9 @@ class ScreenshotsPage(QWidget):
         if not out:
             self.runner.set_error("No output path specified.")
             return
+        if output_overwrites_input(inp, out):
+            self.runner.set_error("Output path must be different from the input file.")
+            return
 
         mode = self.mode.currentData()
 
@@ -166,6 +169,12 @@ class ScreenshotsPage(QWidget):
                 self.output.line.setText(out)
 
             args = ["-i", inp, out]
+
+        try:
+            ensure_output_parent(out)
+        except OSError as e:
+            self.runner.set_error(f"Could not create output folder: {e}")
+            return
 
         dur = self._media_info.duration if self._media_info else 0
         self._worker = FFmpegWorker(args, dur)
