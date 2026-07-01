@@ -8,7 +8,10 @@ from PySide6.QtWidgets import (
     QHeaderView, QPushButton,
 )
 
-from app.ffmpeg_backend import find_ffprobe, FFmpegWorker, probe_file
+from app.ffmpeg_backend import (
+    ensure_output_parent, find_ffprobe, output_overwrites_input,
+    FFmpegWorker, probe_file,
+)
 from app.widgets.common import (
     FileDropZone, OutputSelector, ParamRow, ProcessRunner,
     SectionHeader,
@@ -158,6 +161,14 @@ class MetadataPage(QWidget):
             return
         if not out:
             self.runner.set_error("No output path specified.")
+            return
+        if output_overwrites_input(inp, out):
+            self.runner.set_error("Output path must be different from the input file.")
+            return
+        try:
+            ensure_output_parent(out)
+        except OSError as e:
+            self.runner.set_error(f"Could not create output folder: {e}")
             return
 
         args = ["-i", inp, "-c", "copy", "-map_metadata", "0"]

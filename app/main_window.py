@@ -27,7 +27,7 @@ from app.styles import (
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
     BORDER, RADIUS, DANGER,
 )
-from app.ffmpeg_backend import find_ffmpeg, set_custom_ffmpeg_dir
+from app.ffmpeg_backend import find_ffmpeg, set_custom_ffmpeg_dir, valid_ffmpeg_directory
 from app.pages.convert import ConvertPage
 from app.pages.trim import TrimPage
 from app.pages.audio import AudioPage
@@ -242,7 +242,7 @@ class MainWindow(QMainWindow):
         logo_label.setStyleSheet("background: transparent;")
         brand_layout.addWidget(logo_label)
 
-        version = QLabel("v1.0  ·  Professional Edition")
+        version = QLabel("v1.0.1  ·  Professional Edition")
         version.setStyleSheet(
             f"color: {TEXT_MUTED}; font-size: 10px; background: transparent; "
             f"letter-spacing: 0.3px;"
@@ -329,17 +329,14 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        exe = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
-        if os.path.isfile(os.path.join(path, exe)):
-            set_custom_ffmpeg_dir(path)
-            self._update_ffmpeg_status()
-        elif os.path.isfile(os.path.join(path, "bin", exe)):
-            set_custom_ffmpeg_dir(os.path.join(path, "bin"))
+        valid_dir = valid_ffmpeg_directory(path)
+        if valid_dir:
+            set_custom_ffmpeg_dir(valid_dir)
             self._update_ffmpeg_status()
         else:
             QMessageBox.warning(
                 self, "FFmpeg Not Found",
-                f"No ffmpeg executable found in:\n{path}\n\n"
+                f"No valid ffmpeg executable found in:\n{path}\n\n"
                 "Please select the directory containing ffmpeg.exe\n"
                 "(usually the 'bin' folder inside your FFmpeg installation).\n\n"
                 "Download FFmpeg from: https://ffmpeg.org/download.html",

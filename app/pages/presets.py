@@ -10,7 +10,10 @@ from PySide6.QtWidgets import (
 )
 
 from app.presets import PRESETS, PRESET_CATEGORIES
-from app.ffmpeg_backend import FFmpegWorker, BatchFFmpegWorker, probe_file
+from app.ffmpeg_backend import (
+    build_batch_output_path, ensure_output_parent, output_overwrites_input,
+    FFmpegWorker, BatchFFmpegWorker, probe_file,
+)
 from app.widgets.common import FileDropZone, OutputSelector, ProcessRunner, SectionHeader
 from app.styles import (
     ACCENT, ACCENT2, ACCENT3, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
@@ -115,7 +118,8 @@ class PresetsPage(QWidget):
         layout.addWidget(SectionHeader("Output"))
         self.output = OutputSelector(".mp4")
         from app.widgets.common import ParamRow
-        layout.addWidget(ParamRow("Output File", self.output))
+        self.output_row = ParamRow("Output File", self.output)
+        layout.addWidget(self.output_row)
 
         # Runner
         layout.addSpacing(8)
@@ -168,7 +172,9 @@ class PresetsPage(QWidget):
             f"ffmpeg -i input {args_str} output{preset.extension}</span>"
         )
         self.output.set_suffix(preset.extension)
-        if self.drop.filepath:
+        if self.output.is_directory_mode():
+            self.output.suggest_directory(self.drop.filepath)
+        elif self.drop.filepath:
             self.output.suggest_path(self.drop.filepath, preset.extension)
 
     def _on_file(self, path):
@@ -194,6 +200,17 @@ class PresetsPage(QWidget):
 
     def _on_files(self, paths):
         self._input_files = paths
+        self._sync_output_mode()
+
+    def _sync_output_mode(self):
+        is_batch = len(self._input_files) > 1
+        self.output.set_directory_mode(is_batch)
+        self.output_row.set_label("Output Folder" if is_batch else "Output File")
+        if is_batch:
+            self.output.suggest_directory(self._input_files[0], force=True)
+        elif self.drop.filepath:
+            suffix = self._selected_preset.extension if self._selected_preset else ".mp4"
+            self.output.suggest_path(self.drop.filepath, suffix)
 
     def _start(self):
         inp = self.drop.filepath
@@ -204,14 +221,25 @@ class PresetsPage(QWidget):
             self.runner.set_error("No preset selected.")
             return
 
-        if len(self._input_files) > 1:
+        input_files = self._input_files or [inp]
+
+        if len(input_files) > 1:
             # Batch mode
+            out_dir = self.output.output_path
+            if not out_dir:
+                self.runner.set_error("No output folder specified.")
+                return
+            try:
+                os.makedirs(out_dir, exist_ok=True)
+            except OSError as e:
+                self.runner.set_error(f"Could not create output folder: {e}")
+                return
+
             tasks = []
-            for f in self._input_files:
+            for f in input_files:
                 info = probe_file(f)
                 dur = info.duration if info else 0
-                stem = os.path.splitext(f)[0]
-                out = f"{stem}_output{self._selected_preset.extension}"
+                out = build_batch_output_path(f, out_dir, self._selected_preset.extension)
                 args = ["-i", f] + list(self._selected_preset.ffmpeg_args) + [out]
                 tasks.append((args, dur))
             self._worker = BatchFFmpegWorker(tasks)
@@ -223,6 +251,14 @@ class PresetsPage(QWidget):
             out = self.output.output_path
             if not out:
                 self.runner.set_error("No output path specified.")
+                return
+            if output_overwrites_input(inp, out):
+                self.runner.set_error("Output path must be different from the input file.")
+                return
+            try:
+                ensure_output_parent(out)
+            except OSError as e:
+                self.runner.set_error(f"Could not create output folder: {e}")
                 return
             args = ["-i", inp] + list(self._selected_preset.ffmpeg_args) + [out]
             dur = self._media_info.duration if self._media_info else 0

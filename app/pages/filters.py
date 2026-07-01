@@ -1,21 +1,20 @@
 """Filters & Effects page – video and audio filters with live preview of the command."""
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QScrollArea, QFrame, QCheckBox, QSpinBox, QDoubleSpinBox,
-    QGroupBox, QGridLayout, QComboBox,
+    QScrollArea, QFrame, QCheckBox,
 )
 
 from app.ffmpeg_backend import (
     VIDEO_FILTERS, AUDIO_FILTERS, FFmpegWorker, probe_file,
-    OUTPUT_FORMATS,
+    OUTPUT_FORMATS, ensure_output_parent, output_overwrites_input,
+    split_command_args,
 )
 from app.widgets.common import (
     FileDropZone, OutputSelector, ParamRow, ProcessRunner,
-    SectionHeader, make_combo, Card,
+    SectionHeader,
 )
-from app.styles import TEXT_SECONDARY, ACCENT, ACCENT2
+from app.styles import TEXT_SECONDARY
 
 
 class FilterCheckbox(QWidget):
@@ -172,6 +171,14 @@ class FiltersPage(QWidget):
         if not out:
             self.runner.set_error("No output path specified.")
             return
+        if output_overwrites_input(inp, out):
+            self.runner.set_error("Output path must be different from the input file.")
+            return
+        try:
+            ensure_output_parent(out)
+        except OSError as e:
+            self.runner.set_error(f"Could not create output folder: {e}")
+            return
 
         args = ["-i", inp]
 
@@ -184,7 +191,7 @@ class FiltersPage(QWidget):
 
         extra = self.extra_args.text().strip()
         if extra:
-            args += extra.split()
+            args += split_command_args(extra)
 
         args.append(out)
 

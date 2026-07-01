@@ -9,7 +9,7 @@ Created by **Alfonso Cifuentes Alonso**.
 ## Features
 
 - **Encoding Presets** — 30+ one-click presets for Android, iPhone, YouTube, Instagram, TikTok, WhatsApp, Telegram, web, streaming, professional editing, archival, and more.
-- **Format Conversion** — Convert between any media format with full control over codecs, bitrate, resolution, frame rate, and quality.
+- **Format Conversion** — Convert between any media format with full control over codecs, bitrate, resolution, frame rate, quality, batch output folders, and burned-in text subtitles.
 - **Trim / Cut** — Precision video trimming with stream copy for instant cuts.
 - **Audio Extraction** — Extract and convert audio tracks to MP3, AAC, FLAC, WAV, Opus, and more.
 - **Video Filters** — Apply filters like denoise, sharpen, blur, rotate, grayscale, sepia, vignette, stabilization, and more.
@@ -34,14 +34,14 @@ The application features a premium dark theme with purple, teal, and green accen
 
 ### Installer (Recommended)
 
-Download the latest `FFmpegStudio_Setup.exe` from [Releases](https://github.com/AlfonsoCifuentes/FFmpegStudio/releases) and run it. The installer supports English and Spanish and provides optional desktop shortcut creation.
+Download the latest `FFmpegStudio_Setup.exe` from the project website or [Releases](https://github.com/AlfonsoCifuentes/FFmpegStudio/releases) and run it. The installer supports English and Spanish and provides optional desktop shortcut creation.
 
 ### From Source
 
 ```bash
 git clone https://github.com/AlfonsoCifuentes/FFmpegStudio.git
 cd FFmpegStudio
-pip install PySide6 Pillow
+pip install -r requirements.txt
 python main.py
 ```
 
@@ -77,7 +77,7 @@ Install [Inno Setup 6](https://jrsoftware.org/isdl.php), then compile `installer
 
 ## Tech Stack
 
-- **Python 3.14** — Application language
+- **Python 3.10+** — Application language
 - **PySide6 (Qt6)** — GUI framework
 - **FFmpeg** — Media processing engine
 - **PyInstaller** — Executable bundling

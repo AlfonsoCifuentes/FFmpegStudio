@@ -6,7 +6,10 @@ from PySide6.QtWidgets import (
     QCheckBox, QScrollArea, QFrame,
 )
 
-from app.ffmpeg_backend import build_trim_command, FFmpegWorker, probe_file
+from app.ffmpeg_backend import (
+    build_trim_command, ensure_output_parent, output_overwrites_input,
+    FFmpegWorker, probe_file,
+)
 from app.widgets.common import (
     FileDropZone, OutputSelector, ParamRow, ProcessRunner, SectionHeader,
 )
@@ -102,6 +105,14 @@ class TrimPage(QWidget):
             return
         if not out:
             self.runner.set_error("No output path specified.")
+            return
+        if output_overwrites_input(inp, out):
+            self.runner.set_error("Output path must be different from the input file.")
+            return
+        try:
+            ensure_output_parent(out)
+        except OSError as e:
+            self.runner.set_error(f"Could not create output folder: {e}")
             return
 
         args = build_trim_command(

@@ -1,14 +1,13 @@
 """Advanced / Custom Command page – direct ffmpeg command-line interface."""
 
-import shlex
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPlainTextEdit,
     QScrollArea, QFrame, QPushButton,
 )
 
-from app.ffmpeg_backend import FFmpegWorker
-from app.widgets.common import ProcessRunner, SectionHeader, LogConsole
+from app.ffmpeg_backend import FFmpegWorker, split_command_args
+from app.widgets.common import ProcessRunner, SectionHeader
 from app.styles import (
     TEXT_SECONDARY, ACCENT, BG_INPUT, TEXT_PRIMARY, BORDER,
     BG_DARK, TEXT_MUTED,
@@ -23,7 +22,7 @@ EXAMPLES = [
     ("Add subtitles", 'ffmpeg -i input.mp4 -vf "subtitles=subs.srt" output.mp4'),
     ("Extract subtitle track", 'ffmpeg -i input.mkv -map 0:s:0 output.srt'),
     ("Audio normalization", 'ffmpeg -i input.mp4 -af loudnorm=I=-16:TP=-1.5:LRA=11 output.mp4'),
-    ("Two-pass encode", 'ffmpeg -i input.mp4 -c:v libx264 -b:v 2M -pass 1 -f null NUL && ffmpeg -i input.mp4 -c:v libx264 -b:v 2M -pass 2 output.mp4'),
+    ("Average bitrate encode", 'ffmpeg -i input.mp4 -c:v libx264 -b:v 2M -c:a aac output.mp4'),
 ]
 
 
@@ -110,7 +109,7 @@ class AdvancedPage(QWidget):
 
         # Parse the command
         try:
-            parts = shlex.split(raw, posix=False)
+            parts = split_command_args(raw)
         except ValueError as e:
             self.runner.set_error(f"Invalid command syntax: {e}")
             return
