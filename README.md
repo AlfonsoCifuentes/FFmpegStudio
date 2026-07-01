@@ -8,7 +8,7 @@ Created by **Alfonso Cifuentes Alonso**.
 
 ## Features
 
-- **Encoding Presets** — 30+ one-click presets for Android, iPhone, YouTube, Instagram, TikTok, WhatsApp, Telegram, web, streaming, professional editing, archival, and more.
+- **Encoding Presets** — 30+ one-click presets for Android, iPhone, YouTube, Instagram, TikTok, WhatsApp, Telegram, web, streaming, professional editing, archival, and more, with batch output folders and optional burned-in subtitles for video presets.
 - **Format Conversion** — Convert between any media format with full control over codecs, bitrate, resolution, frame rate, quality, batch output folders, and burned-in text subtitles.
 - **Trim / Cut** — Precision video trimming with stream copy for instant cuts.
 - **Audio Extraction** — Extract and convert audio tracks to MP3, AAC, FLAC, WAV, Opus, and more.
@@ -64,7 +64,7 @@ Install [Inno Setup 6](https://jrsoftware.org/isdl.php), then compile `installer
 
 | Category | Preset |
 |----------|--------|
-| Mobile | MP4 Android Full Compatible, MP4 iPhone/iPad, MP4 WhatsApp, MP4 Telegram |
+| Mobile | MP4 Full Android Compatible, MP4 iPhone/iPad, MP4 WhatsApp, MP4 Telegram |
 | Social Media | YouTube Upload, YouTube 4K, Instagram Reels/Stories, Instagram Feed, TikTok, Twitter/X |
 | Web | MP4 Web/HTML5, WebM VP9, GIF Animated |
 | Professional | MOV ProRes 422, MOV ProRes 4444, MKV DNxHR HQ |

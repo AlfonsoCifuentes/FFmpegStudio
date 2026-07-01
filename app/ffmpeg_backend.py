@@ -652,6 +652,60 @@ def build_subtitles_filter(
     return filter_value
 
 
+def _append_video_filter(args: list[str], video_filter: str) -> list[str]:
+    if not video_filter:
+        return args
+
+    updated = list(args)
+    for option in ("-vf", "-filter:v"):
+        if option in updated:
+            idx = updated.index(option)
+            if idx + 1 < len(updated):
+                updated[idx + 1] = f"{video_filter},{updated[idx + 1]}"
+                return updated
+
+    updated += ["-vf", video_filter]
+    return updated
+
+
+def build_preset_command(
+    input_path: str,
+    output_path: str,
+    preset_args: list[str],
+    burn_subtitles: bool = False,
+    subtitle_path: str = "",
+    subtitle_stream_index: int | None = None,
+) -> list[str]:
+    """Build a robust preset command with explicit video/audio stream mapping."""
+    output_ext = _extension(output_path)
+    has_video_output = output_ext not in AUDIO_ONLY_EXTENSIONS
+    has_audio_output = output_ext not in VIDEO_ONLY_EXTENSIONS
+    should_burn_subtitles = burn_subtitles and (bool(subtitle_path) or subtitle_stream_index is not None)
+
+    if should_burn_subtitles and not has_video_output:
+        raise ValueError("Subtitle burn-in requires a video output preset.")
+
+    args = ["-i", input_path]
+
+    if has_video_output:
+        args += ["-map", "0:v:0"]
+        if has_audio_output:
+            args += ["-map", "0:a?"]
+    else:
+        args += ["-map", "0:a:0?"]
+
+    args += ["-sn"]
+
+    output_args = list(preset_args)
+    if should_burn_subtitles:
+        output_args = _append_video_filter(
+            output_args,
+            build_subtitles_filter(input_path, subtitle_path, subtitle_stream_index),
+        )
+
+    return args + output_args + [output_path]
+
+
 def _auto_video_codec(output_ext: str) -> str:
     if output_ext in AUDIO_ONLY_EXTENSIONS or output_ext in VIDEO_ONLY_EXTENSIONS:
         return ""

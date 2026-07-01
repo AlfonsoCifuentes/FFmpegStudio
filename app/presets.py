@@ -15,7 +15,7 @@ class Preset:
 PRESETS: list[Preset] = [
     # ── Mobile ───────────────────────────────────────────────────────
     Preset(
-        name="MP4 Android Full Compatible",
+        name="MP4 Full Android Compatible",
         category="Mobile",
         description=(
             "Maximum compatibility with Android devices. "
