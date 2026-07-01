@@ -33,8 +33,10 @@ except ModuleNotFoundError:
 
 
 from app.ffmpeg_backend import (
-    build_batch_output_path, build_convert_command, build_subtitles_filter,
+    build_batch_output_path, build_convert_command, build_preset_command,
+    build_subtitles_filter,
 )
+from app.presets import PRESETS
 
 
 class ConvertCommandTests(unittest.TestCase):
@@ -147,6 +149,68 @@ class BatchOutputPathTests(unittest.TestCase):
         out = build_batch_output_path(r"C:\Videos\clip.mp4", r"D:\Out", ".webm")
 
         self.assertTrue(out.endswith(r"D:\Out\clip.webm"))
+
+
+class PresetCommandTests(unittest.TestCase):
+    def test_android_full_compatible_preset_exists(self):
+        self.assertTrue(any(p.name == "MP4 Full Android Compatible" for p in PRESETS))
+
+    def test_video_preset_maps_video_and_optional_audio(self):
+        args = build_preset_command(
+            "input.mkv",
+            "output.mp4",
+            ["-c:v", "libx264", "-c:a", "aac"],
+        )
+
+        self.assertEqual(args[:7], ["-i", "input.mkv", "-map", "0:v:0", "-map", "0:a?", "-sn"])
+        self.assertEqual(args[-1], "output.mp4")
+
+    def test_burn_subtitles_adds_filter_without_subtitle_output_stream(self):
+        args = build_preset_command(
+            "input.mkv",
+            "output.mp4",
+            ["-c:v", "libx264", "-c:a", "aac"],
+            burn_subtitles=True,
+            subtitle_stream_index=0,
+        )
+
+        self.assertIn("-sn", args)
+        self.assertIn("-vf", args)
+        self.assertTrue(any(":si=0" in arg for arg in args))
+
+    def test_burn_subtitles_combines_with_existing_video_filter(self):
+        args = build_preset_command(
+            "input.mkv",
+            "output.gif",
+            ["-vf", "fps=10,scale=854:-2"],
+            burn_subtitles=True,
+            subtitle_stream_index=0,
+        )
+
+        vf = args[args.index("-vf") + 1]
+        self.assertTrue(vf.startswith("subtitles="))
+        self.assertIn(",fps=10,scale=854:-2", vf)
+
+    def test_video_only_preset_does_not_map_audio(self):
+        args = build_preset_command(
+            "input.mkv",
+            "output.gif",
+            ["-vf", "fps=10,scale=854:-2"],
+        )
+
+        self.assertIn("-map", args)
+        self.assertIn("0:v:0", args)
+        self.assertNotIn("0:a?", args)
+
+    def test_burn_subtitles_rejects_audio_preset(self):
+        with self.assertRaises(ValueError):
+            build_preset_command(
+                "input.mkv",
+                "output.mp3",
+                ["-vn", "-c:a", "libmp3lame"],
+                burn_subtitles=True,
+                subtitle_stream_index=0,
+            )
 
 
 if __name__ == "__main__":

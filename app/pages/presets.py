@@ -1,17 +1,19 @@
 """Presets page – one-click encoding with predefined profiles."""
 
 import os
-from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
-    QFrame, QTreeWidget, QTreeWidgetItem, QSizePolicy,
+    QFrame, QTreeWidget, QTreeWidgetItem, QCheckBox, QPushButton,
+    QFileDialog, QComboBox, QLineEdit,
 )
 
 from app.presets import PRESETS, PRESET_CATEGORIES
 from app.ffmpeg_backend import (
-    build_batch_output_path, ensure_output_parent, output_overwrites_input,
+    AUDIO_ONLY_EXTENSIONS, TEXT_SUBTITLE_CODECS,
+    build_batch_output_path, build_preset_command, ensure_output_parent,
+    output_overwrites_input,
     FFmpegWorker, BatchFFmpegWorker, probe_file,
 )
 from app.widgets.common import FileDropZone, OutputSelector, ProcessRunner, SectionHeader
@@ -121,6 +123,32 @@ class PresetsPage(QWidget):
         self.output_row = ParamRow("Output File", self.output)
         layout.addWidget(self.output_row)
 
+        # Subtitles
+        layout.addWidget(SectionHeader("Subtitles"))
+
+        self.burn_subtitles = QCheckBox("Burn subtitles into the video image")
+        self.burn_subtitles.stateChanged.connect(self._on_subtitle_controls_change)
+        layout.addWidget(self.burn_subtitles)
+
+        self.subtitle_track = QComboBox()
+        self.subtitle_track.currentIndexChanged.connect(self._on_subtitle_controls_change)
+        layout.addWidget(ParamRow("Subtitle Track", self.subtitle_track))
+
+        subtitle_file_widget = QWidget()
+        subtitle_file_layout = QHBoxLayout(subtitle_file_widget)
+        subtitle_file_layout.setContentsMargins(0, 0, 0, 0)
+        subtitle_file_layout.setSpacing(8)
+        self.subtitle_file = QLineEdit()
+        self.subtitle_file.setPlaceholderText("External subtitle file (.srt, .ass, .ssa, .vtt)")
+        subtitle_file_layout.addWidget(self.subtitle_file, 1)
+        self.subtitle_browse = QPushButton("Browse...")
+        self.subtitle_browse.clicked.connect(self._browse_subtitle_file)
+        subtitle_file_layout.addWidget(self.subtitle_browse)
+        self.subtitle_file_row = ParamRow("Subtitle File", subtitle_file_widget)
+        layout.addWidget(self.subtitle_file_row)
+        self._populate_subtitle_tracks(None)
+        self._on_subtitle_controls_change()
+
         # Runner
         layout.addSpacing(8)
         self.runner = ProcessRunner()
@@ -176,6 +204,7 @@ class PresetsPage(QWidget):
             self.output.suggest_directory(self.drop.filepath)
         elif self.drop.filepath:
             self.output.suggest_path(self.drop.filepath, preset.extension)
+        self._on_subtitle_controls_change()
 
     def _on_file(self, path):
         info = probe_file(path)
@@ -189,10 +218,13 @@ class PresetsPage(QWidget):
                 f"Audio: {info.audio_codec}",
                 f"Size: {info.size / (1024*1024):.1f} MB",
             ]
+            if info.subtitle_streams:
+                parts.append(f"Subtitles: {len(info.subtitle_streams)}")
             self.info_label.setText("  •  ".join(parts))
         else:
             self.info_label.setText("Could not probe file (ffprobe not found or invalid file)")
 
+        self._populate_subtitle_tracks(info)
         if self._selected_preset:
             self.output.suggest_path(path, self._selected_preset.extension)
         else:
@@ -211,6 +243,108 @@ class PresetsPage(QWidget):
         elif self.drop.filepath:
             suffix = self._selected_preset.extension if self._selected_preset else ".mp4"
             self.output.suggest_path(self.drop.filepath, suffix)
+
+    def _populate_subtitle_tracks(self, info):
+        self.subtitle_track.blockSignals(True)
+        self.subtitle_track.clear()
+        self.subtitle_track.addItem("No subtitle track", None)
+
+        if info:
+            for subtitle_index, stream in enumerate(info.subtitle_streams):
+                codec = str(stream.get("codec_name", "unknown")).lower()
+                tags = stream.get("tags", {}) or {}
+                lang = tags.get("language") or tags.get("LANGUAGE") or "und"
+                title = tags.get("title") or tags.get("TITLE") or ""
+                label = f"Embedded {subtitle_index + 1}: {codec} ({lang})"
+                if title:
+                    label += f" - {title}"
+                if codec not in TEXT_SUBTITLE_CODECS:
+                    label += " - not text-based"
+                self.subtitle_track.addItem(
+                    label,
+                    {"type": "embedded", "index": subtitle_index, "codec": codec},
+                )
+
+        self.subtitle_track.addItem("External subtitle file", {"type": "external"})
+        self.subtitle_track.blockSignals(False)
+
+    def _on_subtitle_controls_change(self):
+        enabled = self.burn_subtitles.isChecked()
+        preset_ext = self._selected_preset.extension if self._selected_preset else ".mp4"
+        can_burn = preset_ext not in AUDIO_ONLY_EXTENSIONS
+        if not can_burn and self.burn_subtitles.isChecked():
+            self.burn_subtitles.blockSignals(True)
+            self.burn_subtitles.setChecked(False)
+            self.burn_subtitles.blockSignals(False)
+        self.burn_subtitles.setEnabled(can_burn)
+        if not can_burn:
+            enabled = False
+
+        self.subtitle_track.setEnabled(enabled)
+        data = self.subtitle_track.currentData() if enabled else None
+        uses_external = isinstance(data, dict) and data.get("type") == "external"
+        self.subtitle_file_row.setVisible(enabled and uses_external)
+
+    def _browse_subtitle_file(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Subtitle File",
+            "",
+            "Subtitle Files (*.srt *.ass *.ssa *.vtt);;All Files (*)",
+        )
+        if path:
+            self.subtitle_file.setText(path)
+
+    def _subtitle_selection(self, file_info=None):
+        if not self.burn_subtitles.isChecked():
+            return None
+
+        if not self._selected_preset or self._selected_preset.extension in AUDIO_ONLY_EXTENSIONS:
+            raise ValueError("Subtitle burn-in requires a video preset.")
+
+        data = self.subtitle_track.currentData()
+        if not isinstance(data, dict):
+            raise ValueError("Select a subtitle track or external subtitle file to burn.")
+
+        if data.get("type") == "external":
+            subtitle_path = self.subtitle_file.text().strip()
+            if not subtitle_path:
+                raise ValueError("Select an external subtitle file to burn.")
+            if not os.path.isfile(subtitle_path):
+                raise ValueError("External subtitle file does not exist.")
+            return {"subtitle_path": subtitle_path, "subtitle_stream_index": None}
+
+        subtitle_index = int(data.get("index", 0))
+        info = file_info or self._media_info
+        if not info or len(info.subtitle_streams) <= subtitle_index:
+            raise ValueError(f"Subtitle track {subtitle_index + 1} was not found in the input file.")
+
+        stream = info.subtitle_streams[subtitle_index]
+        codec = str(stream.get("codec_name", "")).lower()
+        if codec not in TEXT_SUBTITLE_CODECS:
+            raise ValueError(
+                f"Subtitle track {subtitle_index + 1} uses '{codec}', which cannot be burned with the text subtitle renderer."
+            )
+
+        return {"subtitle_path": "", "subtitle_stream_index": subtitle_index}
+
+    def _build_args(self, inp, out, file_info=None):
+        if (
+            file_info
+            and self._selected_preset.extension not in AUDIO_ONLY_EXTENSIONS
+            and not file_info.video_streams
+        ):
+            raise ValueError(f"{os.path.basename(inp)} does not contain a video stream for this preset.")
+
+        subtitle = self._subtitle_selection(file_info)
+        return build_preset_command(
+            input_path=inp,
+            output_path=out,
+            preset_args=list(self._selected_preset.ffmpeg_args),
+            burn_subtitles=subtitle is not None,
+            subtitle_path=subtitle["subtitle_path"] if subtitle else "",
+            subtitle_stream_index=subtitle["subtitle_stream_index"] if subtitle else None,
+        )
 
     def _start(self):
         inp = self.drop.filepath
@@ -240,7 +374,11 @@ class PresetsPage(QWidget):
                 info = probe_file(f)
                 dur = info.duration if info else 0
                 out = build_batch_output_path(f, out_dir, self._selected_preset.extension)
-                args = ["-i", f] + list(self._selected_preset.ffmpeg_args) + [out]
+                try:
+                    args = self._build_args(f, out, info)
+                except ValueError as e:
+                    self.runner.set_error(str(e))
+                    return
                 tasks.append((args, dur))
             self._worker = BatchFFmpegWorker(tasks)
             self.runner.connect_worker(self._worker)
@@ -260,7 +398,11 @@ class PresetsPage(QWidget):
             except OSError as e:
                 self.runner.set_error(f"Could not create output folder: {e}")
                 return
-            args = ["-i", inp] + list(self._selected_preset.ffmpeg_args) + [out]
+            try:
+                args = self._build_args(inp, out, self._media_info)
+            except ValueError as e:
+                self.runner.set_error(str(e))
+                return
             dur = self._media_info.duration if self._media_info else 0
             self._worker = FFmpegWorker(args, dur)
             self.runner.connect_worker(self._worker)
