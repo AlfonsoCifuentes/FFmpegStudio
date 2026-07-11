@@ -242,7 +242,7 @@ class MainWindow(QMainWindow):
         logo_label.setStyleSheet("background: transparent;")
         brand_layout.addWidget(logo_label)
 
-        version = QLabel("v1.0.3  ·  Professional Edition")
+        version = QLabel("v1.0.4  ·  Professional Edition")
         version.setStyleSheet(
             f"color: {TEXT_MUTED}; font-size: 10px; background: transparent; "
             f"letter-spacing: 0.3px;"

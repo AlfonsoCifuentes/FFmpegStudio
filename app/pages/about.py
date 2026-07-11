@@ -19,14 +19,14 @@ from app.styles import (
     DANGER, WARN,
 )
 
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 GITHUB_REPO = "AlfonsoCifuentes/FFmpegStudio"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 
 def _version_key(value: str) -> tuple[int, ...]:
-    """Return a numeric version key so 1.0.10 sorts after 1.0.3."""
+    """Return a numeric version key so 1.0.10 sorts after 1.0.4."""
     parts = [int(part) for part in re.findall(r"\d+", value)]
     return tuple((parts + [0, 0, 0, 0])[:4])
 

@@ -34,7 +34,7 @@ The application features a premium dark theme with purple, teal, and green accen
 
 ### Installer (Recommended)
 
-Download the latest versioned installer (for example, `FFmpegStudio_Setup_1.0.3.exe`) from the project website or [Releases](https://github.com/AlfonsoCifuentes/FFmpegStudio/releases) and run it. The installer supports English and Spanish, updates an existing FFmpeg Studio installation in place, and provides optional desktop shortcut creation.
+Download the latest versioned installer (for example, `FFmpegStudio_Setup_1.0.4.exe`) from the project website or [Releases](https://github.com/AlfonsoCifuentes/FFmpegStudio/releases) and run it. The installer supports English and Spanish, updates an existing FFmpeg Studio installation in place, and provides optional desktop shortcut creation.
 
 ### From Source
 
