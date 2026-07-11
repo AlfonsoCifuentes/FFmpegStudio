@@ -1,10 +1,12 @@
 """About page – author info, version details, and update checker."""
 
 import json
+import os
+import re
 import urllib.request
 import urllib.error
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QPixmap, QDesktopServices
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
@@ -17,10 +19,16 @@ from app.styles import (
     DANGER, WARN,
 )
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 GITHUB_REPO = "AlfonsoCifuentes/FFmpegStudio"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+
+
+def _version_key(value: str) -> tuple[int, ...]:
+    """Return a numeric version key so 1.0.10 sorts after 1.0.3."""
+    parts = [int(part) for part in re.findall(r"\d+", value)]
+    return tuple((parts + [0, 0, 0, 0])[:4])
 
 
 class _UpdateChecker(QThread):
@@ -150,7 +158,7 @@ class AboutPage(QWidget):
             f"font-size: 13px; font-weight: 600; text-align: left; }}"
             f"QPushButton:hover {{ background: {BG_HOVER}; border-color: {ACCENT2}; }}"
         )
-        gh_btn.clicked.connect(lambda: QDesktopServices.openUrl(GITHUB_URL))
+        gh_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
         lc_layout.addWidget(gh_btn)
 
         issues_btn = QPushButton("  Report a Bug / Request a Feature")
@@ -161,7 +169,7 @@ class AboutPage(QWidget):
             f"font-size: 13px; font-weight: 600; text-align: left; }}"
             f"QPushButton:hover {{ background: {BG_HOVER}; border-color: {TEXT_MUTED}; }}"
         )
-        issues_btn.clicked.connect(lambda: QDesktopServices.openUrl(GITHUB_URL + "/issues"))
+        issues_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL + "/issues")))
         lc_layout.addWidget(issues_btn)
 
         layout.addWidget(links_card)
@@ -288,7 +296,7 @@ class AboutPage(QWidget):
             return
 
         latest = version_or_error
-        if latest and latest != APP_VERSION and latest > APP_VERSION:
+        if latest and _version_key(latest) > _version_key(APP_VERSION):
             self._update_label.setText(
                 f"New version available: <b style='color:{ACCENT3}'>{latest}</b> "
                 f"(current: {APP_VERSION})"
@@ -304,7 +312,7 @@ class AboutPage(QWidget):
                 pass
             download_url = url_or_msg
             self._download_btn.clicked.connect(
-                lambda: QDesktopServices.openUrl(download_url)
+                lambda _checked=False, url=download_url: QDesktopServices.openUrl(QUrl(url))
             )
         else:
             self._update_label.setText(

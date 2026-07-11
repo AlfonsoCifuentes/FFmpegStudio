@@ -50,7 +50,7 @@ class ConvertPage(QWidget):
         # Input
         layout.addSpacing(8)
         layout.addWidget(SectionHeader("Input"))
-        self.drop = FileDropZone(accept_multiple=True, file_filter="Media Files (*.mp4 *.mkv *.avi *.mov *.webm *.flv *.ts *.wmv *.mpg *.mp3 *.aac *.flac *.wav *.ogg);;All Files (*)")
+        self.drop = FileDropZone(accept_multiple=True, file_filter="Media Files (*.mp4 *.m4v *.mkv *.avi *.mov *.webm *.flv *.ts *.mts *.m2ts *.wmv *.mpg *.mpeg *.vob *.3gp *.mp3 *.aac *.flac *.wav *.ogg);;All Files (*)")
         self.drop.file_dropped.connect(self._on_file)
         self.drop.files_dropped.connect(self._on_files)
         layout.addWidget(self.drop)
@@ -189,6 +189,7 @@ class ConvertPage(QWidget):
             self.output.suggest_directory(self.drop.filepath)
         elif self.drop.filepath:
             self.output.suggest_path(self.drop.filepath, ext)
+        self._on_subtitle_controls_change()
 
     def _sync_output_mode(self):
         is_batch = len(self._input_files) > 1
@@ -225,6 +226,14 @@ class ConvertPage(QWidget):
 
     def _on_subtitle_controls_change(self):
         enabled = self.burn_subtitles.isChecked()
+        can_burn = self.fmt_combo.currentData() not in AUDIO_ONLY_EXTENSIONS
+        if not can_burn and self.burn_subtitles.isChecked():
+            self.burn_subtitles.blockSignals(True)
+            self.burn_subtitles.setChecked(False)
+            self.burn_subtitles.blockSignals(False)
+        self.burn_subtitles.setEnabled(can_burn)
+        if not can_burn:
+            enabled = False
         self.subtitle_track.setEnabled(enabled)
         data = self.subtitle_track.currentData() if enabled else None
         uses_external = isinstance(data, dict) and data.get("type") == "external"
@@ -273,8 +282,8 @@ class ConvertPage(QWidget):
 
         return {"subtitle_path": "", "subtitle_stream_index": subtitle_index}
 
-    def _build_args(self, inp, out):
-        subtitle = self._subtitle_selection()
+    def _build_args(self, inp, out, file_info=None):
+        subtitle = self._subtitle_selection(file_info)
         return build_convert_command(
             input_path=inp,
             output_path=out,
@@ -316,17 +325,17 @@ class ConvertPage(QWidget):
                 return
 
             tasks = []
+            reserved_outputs = set()
             for f in input_files:
                 info = probe_file(f)
                 dur = info.duration if info else 0
-                out = build_batch_output_path(f, out_dir, fmt_ext)
+                out = build_batch_output_path(f, out_dir, fmt_ext, reserved_outputs)
                 try:
-                    if self.burn_subtitles.isChecked():
-                        self._subtitle_selection(info)
-                    tasks.append((self._build_args(f, out), dur))
+                    tasks.append((self._build_args(f, out, info), dur))
                 except ValueError as e:
                     self.runner.set_error(str(e))
                     return
+                reserved_outputs.add(os.path.normcase(os.path.abspath(out)))
             self._worker = BatchFFmpegWorker(tasks)
             self.runner.connect_worker(self._worker)
             self.runner.set_running(True)
@@ -346,7 +355,7 @@ class ConvertPage(QWidget):
                 self.runner.set_error(f"Could not create output folder: {e}")
                 return
             try:
-                args = self._build_args(inp, out)
+                args = self._build_args(inp, out, self._media_info)
             except ValueError as e:
                 self.runner.set_error(str(e))
                 return

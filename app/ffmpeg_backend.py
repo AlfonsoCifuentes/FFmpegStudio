@@ -81,6 +81,28 @@ class MediaInfo:
         return f"{h:02d}:{m:02d}:{s:06.3f}"
 
 
+def get_primary_video_stream_index(info: MediaInfo | None) -> int | None:
+    """Return the global index of the main video stream, skipping cover art."""
+    if not info:
+        return None
+
+    video_streams = info.video_streams
+    for stream in video_streams:
+        disposition = stream.get("disposition", {}) or {}
+        if not disposition.get("attached_pic"):
+            try:
+                return int(stream["index"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    for stream in video_streams:
+        try:
+            return int(stream["index"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    return None
+
+
 def _config_dir() -> str:
     """Return the app config directory, creating it if needed."""
     d = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "FFmpegStudio")
@@ -600,16 +622,38 @@ def _same_path(left: str, right: str) -> bool:
     return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
 
 
-def build_batch_output_path(input_path: str, output_dir: str, suffix: str) -> str:
-    """Build a batch output path inside output_dir without overwriting the source."""
+def build_batch_output_path(
+    input_path: str,
+    output_dir: str,
+    suffix: str,
+    reserved_paths: set[str] | None = None,
+) -> str:
+    """Build a unique batch output path without overwriting sources or prior outputs."""
     ext = _extension(suffix) or os.path.splitext(input_path)[1]
     source = os.path.abspath(input_path)
-    output = os.path.abspath(os.path.join(output_dir, f"{os.path.splitext(os.path.basename(input_path))[0]}{ext}"))
+    stem = os.path.splitext(os.path.basename(input_path))[0]
+    reserved = {
+        os.path.normcase(os.path.abspath(path))
+        for path in (reserved_paths or set())
+    }
 
-    if _same_path(source, output):
-        stem = os.path.splitext(os.path.basename(input_path))[0]
-        output = os.path.abspath(os.path.join(output_dir, f"{stem}_output{ext}"))
+    def is_available(path: str) -> bool:
+        normalized = os.path.normcase(os.path.abspath(path))
+        return (
+            not _same_path(source, path)
+            and normalized not in reserved
+            and not os.path.exists(path)
+        )
 
+    output = os.path.abspath(os.path.join(output_dir, f"{stem}{ext}"))
+    if is_available(output):
+        return output
+
+    output = os.path.abspath(os.path.join(output_dir, f"{stem}_output{ext}"))
+    counter = 2
+    while not is_available(output):
+        output = os.path.abspath(os.path.join(output_dir, f"{stem}_output_{counter}{ext}"))
+        counter += 1
     return output
 
 
@@ -675,6 +719,7 @@ def build_preset_command(
     burn_subtitles: bool = False,
     subtitle_path: str = "",
     subtitle_stream_index: int | None = None,
+    video_stream_index: int | None = None,
 ) -> list[str]:
     """Build a robust preset command with explicit video/audio stream mapping."""
     output_ext = _extension(output_path)
@@ -688,7 +733,8 @@ def build_preset_command(
     args = ["-i", input_path]
 
     if has_video_output:
-        args += ["-map", "0:v:0"]
+        video_map = f"0:{int(video_stream_index)}" if video_stream_index is not None else "0:v:0"
+        args += ["-map", video_map]
         if has_audio_output:
             args += ["-map", "0:a?"]
     else:

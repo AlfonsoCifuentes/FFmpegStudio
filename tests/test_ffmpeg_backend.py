@@ -1,3 +1,4 @@
+import os
 import sys
 import types
 import unittest
@@ -34,7 +35,7 @@ except ModuleNotFoundError:
 
 from app.ffmpeg_backend import (
     build_batch_output_path, build_convert_command, build_preset_command,
-    build_subtitles_filter,
+    build_subtitles_filter, get_primary_video_stream_index, MediaInfo,
 )
 from app.presets import PRESETS
 
@@ -150,10 +151,43 @@ class BatchOutputPathTests(unittest.TestCase):
 
         self.assertTrue(out.endswith(r"D:\Out\clip.webm"))
 
+    def test_reserved_output_uses_unique_suffix(self):
+        original = os.path.normcase(os.path.abspath(r"D:\Out\clip.mp4"))
+        reserved = {original}
+
+        out = build_batch_output_path(r"C:\Videos\clip.mkv", r"D:\Out", ".mp4", reserved)
+
+        self.assertTrue(out.endswith(r"D:\Out\clip_output.mp4"))
+
+    def test_multiple_reserved_outputs_keep_incrementing_suffix(self):
+        reserved = {
+            os.path.normcase(os.path.abspath(r"D:\Out\clip.mp4")),
+            os.path.normcase(os.path.abspath(r"D:\Out\clip_output.mp4")),
+        }
+
+        out = build_batch_output_path(r"C:\Videos\clip.mkv", r"D:\Out", ".mp4", reserved)
+
+        self.assertTrue(out.endswith(r"D:\Out\clip_output_2.mp4"))
+
+
+class MediaInfoTests(unittest.TestCase):
+    def test_primary_video_stream_skips_attached_picture(self):
+        info = MediaInfo(streams=[
+            {"index": 0, "codec_type": "video", "disposition": {"attached_pic": 1}},
+            {"index": 3, "codec_type": "video", "disposition": {"attached_pic": 0}},
+        ])
+
+        self.assertEqual(get_primary_video_stream_index(info), 3)
+
 
 class PresetCommandTests(unittest.TestCase):
     def test_android_full_compatible_preset_exists(self):
-        self.assertTrue(any(p.name == "MP4 Full Android Compatible" for p in PRESETS))
+        preset = next(p for p in PRESETS if p.name == "MP4 Full Android Compatible")
+
+        self.assertIn("-vf", preset.ffmpeg_args)
+        video_filter = preset.ffmpeg_args[preset.ffmpeg_args.index("-vf") + 1]
+        self.assertIn("force_original_aspect_ratio=decrease", video_filter)
+        self.assertIn("setsar=1", video_filter)
 
     def test_video_preset_maps_video_and_optional_audio(self):
         args = build_preset_command(
@@ -164,6 +198,16 @@ class PresetCommandTests(unittest.TestCase):
 
         self.assertEqual(args[:7], ["-i", "input.mkv", "-map", "0:v:0", "-map", "0:a?", "-sn"])
         self.assertEqual(args[-1], "output.mp4")
+
+    def test_video_preset_can_map_primary_video_stream(self):
+        args = build_preset_command(
+            "input.mkv",
+            "output.mp4",
+            ["-c:v", "libx264", "-c:a", "aac"],
+            video_stream_index=3,
+        )
+
+        self.assertEqual(args[args.index("-map") + 1], "0:3")
 
     def test_burn_subtitles_adds_filter_without_subtitle_output_stream(self):
         args = build_preset_command(

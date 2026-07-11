@@ -20,12 +20,13 @@ PRESETS: list[Preset] = [
         description=(
             "Maximum compatibility with Android devices. "
             "H.264 Baseline profile, Level 3.0, 720×480, 23.976 fps, "
-            "AAC stereo 128 kbps, faststart enabled."
+            "AAC stereo 128 kbps, aspect ratio preserved, faststart enabled."
         ),
         extension=".mp4",
         ffmpeg_args=[
             "-c:v", "libx264", "-profile:v", "baseline", "-level", "3.0",
-            "-s", "720x480", "-r", "24000/1001", "-pix_fmt", "yuv420p",
+            "-vf", "scale=720:480:force_original_aspect_ratio=decrease,pad=720:480:(ow-iw)/2:(oh-ih)/2,setsar=1",
+            "-r", "24000/1001", "-pix_fmt", "yuv420p",
             "-b:v", "1200k",
             "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000",
             "-movflags", "+faststart",

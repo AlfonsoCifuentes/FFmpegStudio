@@ -2,7 +2,7 @@
 ; Builds a standard Windows installer
 
 #define MyAppName "FFmpeg Studio"
-#define MyAppVersion "1.0.2"
+#define MyAppVersion "1.0.3"
 #define MyAppPublisher "Alfonso Cifuentes Alonso"
 #define MyAppExeName "FFmpegStudio.exe"
 #define MyAppURL "https://github.com/AlfonsoCifuentes/FFmpegStudio"
@@ -11,13 +11,16 @@
 AppId={{B3E7F4A2-8C1D-4E6F-A5B9-2D3C7E8F1A4B}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}/releases/latest
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+UsePreviousAppDir=yes
 OutputDir={#SourcePath}\output
-OutputBaseFilename=FFmpegStudio_Setup
+OutputBaseFilename=FFmpegStudio_Setup_{#MyAppVersion}
 SetupIconFile={#SourcePath}\assets\icon.ico
 WizardImageFile={#SourcePath}\assets\installer_wizard.bmp
 WizardSmallImageFile={#SourcePath}\assets\installer_small.bmp
@@ -30,6 +33,9 @@ CreateUninstallRegKey=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+CloseApplications=yes
+CloseApplicationsFilter={#MyAppExeName}
+RestartApplications=no
 LicenseFile=
 InfoBeforeFile=
 InfoAfterFile=
@@ -48,6 +54,12 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#SourcePath}\dist\FFmpegStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+; Remove private PyInstaller files from older builds before copying the update.
+Type: filesandordirs; Name: "{app}\_internal"
+Type: filesandordirs; Name: "{app}\assets"
+Type: files; Name: "{app}\{#MyAppExeName}"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
