@@ -1,5 +1,7 @@
 """Audio extraction / conversion page."""
 
+import os
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, QScrollArea, QFrame,
@@ -7,7 +9,7 @@ from PySide6.QtWidgets import (
 
 from app.ffmpeg_backend import (
     AUDIO_CODECS, SAMPLE_RATES, AUDIO_CHANNELS,
-    build_extract_audio_command, ensure_output_parent, output_overwrites_input,
+    build_extract_audio_command, build_folder_output_path,
     FFmpegWorker, probe_file,
 )
 from app.widgets.common import (
@@ -70,7 +72,8 @@ class AudioPage(QWidget):
         layout.addWidget(ParamRow("Format", self.fmt_combo))
 
         self.output = OutputSelector(".mp3")
-        layout.addWidget(ParamRow("Output File", self.output))
+        self.output.set_directory_mode(True)
+        layout.addWidget(ParamRow("Output Folder", self.output))
 
         layout.addWidget(SectionHeader("Audio Settings"))
 
@@ -106,31 +109,30 @@ class AudioPage(QWidget):
                 f"Duration: {info.duration_str}  •  Audio: {info.audio_codec}  •  "
                 f"Size: {info.size/(1024*1024):.1f} MB"
             )
-        ext = self.fmt_combo.currentData()
-        self.output.suggest_path(path, ext)
+        self.output.suggest_directory(path, subdirectory="FFmpeg Studio Output")
 
     def _on_format_change(self):
         ext = self.fmt_combo.currentData()
         self.output.set_suffix(ext)
-        if self.drop.filepath:
-            self.output.suggest_path(self.drop.filepath, ext)
+        self.output.suggest_directory(self.drop.filepath, subdirectory="FFmpeg Studio Output")
 
     def _start(self):
         inp = self.drop.filepath
-        out = self.output.output_path
         if not inp:
             self.runner.set_error("No input file selected.")
             return
-        if not out:
-            self.runner.set_error("No output path specified.")
-            return
-        if output_overwrites_input(inp, out):
-            self.runner.set_error("Output path must be different from the input file.")
+        out_dir = self.output.output_path
+        if not out_dir:
+            self.runner.set_error("No output folder specified.")
             return
         try:
-            ensure_output_parent(out)
+            os.makedirs(out_dir, exist_ok=True)
+            out = build_folder_output_path(inp, out_dir, self.fmt_combo.currentData())
         except OSError as e:
             self.runner.set_error(f"Could not create output folder: {e}")
+            return
+        except ValueError as e:
+            self.runner.set_error(str(e))
             return
 
         args = build_extract_audio_command(

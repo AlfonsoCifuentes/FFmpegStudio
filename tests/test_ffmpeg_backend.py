@@ -34,7 +34,8 @@ except ModuleNotFoundError:
 
 
 from app.ffmpeg_backend import (
-    build_batch_output_path, build_convert_command, build_preset_command,
+    build_batch_output_path, build_convert_command, build_folder_output_path,
+    build_preset_command,
     build_subtitles_filter, get_primary_video_stream_index, MediaInfo,
 )
 from app.presets import PRESETS
@@ -169,6 +170,21 @@ class BatchOutputPathTests(unittest.TestCase):
 
         self.assertTrue(out.endswith(r"D:\Out\clip_output_2.mp4"))
 
+    def test_folder_output_keeps_original_name(self):
+        out = build_folder_output_path(r"C:\Videos\clip.mkv", r"D:\Out", ".mp4")
+
+        self.assertTrue(out.endswith(r"D:\Out\clip.mp4"))
+
+    def test_folder_output_rejects_same_source_path(self):
+        with self.assertRaises(ValueError):
+            build_folder_output_path(r"C:\Videos\clip.mp4", r"C:\Videos", ".mp4")
+
+    def test_folder_output_rejects_duplicate_batch_name(self):
+        reserved = {os.path.normcase(os.path.abspath(r"D:\Out\clip.mp4"))}
+
+        with self.assertRaises(ValueError):
+            build_folder_output_path(r"C:\Other\clip.mkv", r"D:\Out", ".mp4", reserved)
+
 
 class MediaInfoTests(unittest.TestCase):
     def test_primary_video_stream_skips_attached_picture(self):
@@ -234,6 +250,53 @@ class PresetCommandTests(unittest.TestCase):
         vf = args[args.index("-vf") + 1]
         self.assertTrue(vf.startswith("subtitles="))
         self.assertIn(",fps=10,scale=854:-2", vf)
+
+    def test_bitmap_subtitles_use_overlay_filter_graph(self):
+        args = build_preset_command(
+            "input.mkv",
+            "output.mp4",
+            ["-c:v", "libx264", "-vf", "scale=720:480", "-c:a", "aac"],
+            burn_subtitles=True,
+            subtitle_stream_index=1,
+            subtitle_codec="hdmv_pgs_subtitle",
+        )
+
+        self.assertIn("-filter_complex", args)
+        graph = args[args.index("-filter_complex") + 1]
+        self.assertIn("[0:s:1]", graph)
+        self.assertIn("scale2ref[scaled_subtitle][video_base]", graph)
+        self.assertIn("overlay=eof_action=pass:repeatlast=0", graph)
+        self.assertIn("scale=720:480", graph)
+        self.assertIn("[burned_video]", args)
+        self.assertNotIn("-vf", args)
+
+    def test_external_bitmap_subtitles_add_a_second_input(self):
+        args = build_preset_command(
+            "input.mkv",
+            "output.mp4",
+            ["-c:v", "libx264", "-c:a", "aac"],
+            burn_subtitles=True,
+            subtitle_path="subtitle.sup",
+            subtitle_codec="hdmv_pgs_subtitle",
+        )
+
+        self.assertEqual(args[:4], ["-i", "input.mkv", "-i", "subtitle.sup"])
+        graph = args[args.index("-filter_complex") + 1]
+        self.assertIn("[1:s:0]", graph)
+
+    def test_convert_bitmap_subtitles_use_overlay_filter_graph(self):
+        args = build_convert_command(
+            "input.mkv",
+            "output.mp4",
+            burn_subtitles=True,
+            subtitle_stream_index=0,
+            subtitle_codec="hdmv_pgs_subtitle",
+        )
+
+        self.assertIn("-filter_complex", args)
+        graph = args[args.index("-filter_complex") + 1]
+        self.assertIn("[0:s:0]", graph)
+        self.assertIn("[subtitle_overlay]", args)
 
     def test_video_only_preset_does_not_map_audio(self):
         args = build_preset_command(

@@ -1,5 +1,7 @@
 """Resize / Scale page."""
 
+import os
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, QScrollArea,
     QFrame,
@@ -7,7 +9,7 @@ from PySide6.QtWidgets import (
 
 from app.ffmpeg_backend import (
     RESOLUTIONS, build_resize_command, FFmpegWorker, probe_file,
-    OUTPUT_FORMATS, ensure_output_parent, output_overwrites_input,
+    OUTPUT_FORMATS, build_folder_output_path,
 )
 from app.widgets.common import (
     FileDropZone, OutputSelector, ParamRow, ProcessRunner,
@@ -84,7 +86,8 @@ class ResizePage(QWidget):
         layout.addWidget(ParamRow("Format", self.output_fmt))
 
         self.output = OutputSelector(".mp4")
-        layout.addWidget(ParamRow("Output File", self.output))
+        self.output.set_directory_mode(True)
+        layout.addWidget(ParamRow("Output Folder", self.output))
 
         layout.addSpacing(8)
         self.runner = ProcessRunner()
@@ -105,30 +108,30 @@ class ResizePage(QWidget):
                 f"Duration: {info.duration_str}  •  Resolution: {info.resolution}  •  "
                 f"Codec: {info.video_codec}"
             )
-        self.output.suggest_path(path, self.output_fmt.currentData())
+        self.output.suggest_directory(path, subdirectory="FFmpeg Studio Output")
 
     def _on_format_change(self):
         ext = self.output_fmt.currentData()
         self.output.set_suffix(ext)
-        if self.drop.filepath:
-            self.output.suggest_path(self.drop.filepath, ext)
+        self.output.suggest_directory(self.drop.filepath, subdirectory="FFmpeg Studio Output")
 
     def _start(self):
         inp = self.drop.filepath
-        out = self.output.output_path
         if not inp:
             self.runner.set_error("No input file selected.")
             return
-        if not out:
-            self.runner.set_error("No output path specified.")
-            return
-        if output_overwrites_input(inp, out):
-            self.runner.set_error("Output path must be different from the input file.")
+        out_dir = self.output.output_path
+        if not out_dir:
+            self.runner.set_error("No output folder specified.")
             return
         try:
-            ensure_output_parent(out)
+            os.makedirs(out_dir, exist_ok=True)
+            out = build_folder_output_path(inp, out_dir, self.output_fmt.currentData())
         except OSError as e:
             self.runner.set_error(f"Could not create output folder: {e}")
+            return
+        except ValueError as e:
+            self.runner.set_error(str(e))
             return
 
         # Determine resolution

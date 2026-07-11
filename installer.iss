@@ -2,7 +2,7 @@
 ; Builds a standard Windows installer
 
 #define MyAppName "FFmpeg Studio"
-#define MyAppVersion "1.0.4"
+#define MyAppVersion "1.0.5"
 #define MyAppPublisher "Alfonso Cifuentes Alonso"
 #define MyAppExeName "FFmpegStudio.exe"
 #define MyAppURL "https://github.com/AlfonsoCifuentes/FFmpegStudio"
