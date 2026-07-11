@@ -12,7 +12,7 @@ from app.ffmpeg_backend import (
 )
 from app.widgets.common import (
     FileDropZone, OutputSelector, ParamRow, ProcessRunner,
-    SectionHeader,
+    SectionHeader, make_combo,
 )
 from app.styles import TEXT_SECONDARY
 
