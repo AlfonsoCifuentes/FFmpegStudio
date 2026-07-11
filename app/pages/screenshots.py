@@ -1,12 +1,14 @@
 """Screenshots / Frame Extraction page."""
 
+import os
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, QScrollArea,
     QFrame, QSpinBox,
 )
 
 from app.ffmpeg_backend import (
-    build_screenshot_command, ensure_output_parent, output_overwrites_input,
+    build_folder_output_path, build_screenshot_command,
     FFmpegWorker, probe_file,
 )
 from app.widgets.common import (
@@ -89,10 +91,11 @@ class ScreenshotsPage(QWidget):
         layout.addWidget(ParamRow("Image Format", self.img_fmt))
 
         self.output = OutputSelector(".png")
-        layout.addWidget(ParamRow("Output Path", self.output))
+        self.output.set_directory_mode(True)
+        layout.addWidget(ParamRow("Output Folder", self.output))
 
         self.note_label = QLabel(
-            "For multiple frames, use a pattern like output_%04d.png – the number placeholder will be auto-added."
+            "The original video name is used automatically; frame numbers are added for multi-frame extraction."
         )
         self.note_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; background:transparent;")
         self.note_label.setWordWrap(True)
@@ -119,8 +122,7 @@ class ScreenshotsPage(QWidget):
     def _on_img_format_change(self):
         ext = self.img_fmt.currentData()
         self.output.set_suffix(ext)
-        if self.drop.filepath:
-            self.output.suggest_path(self.drop.filepath, ext)
+        self.output.suggest_directory(self.drop.filepath, subdirectory="FFmpeg Studio Output")
 
     def _on_file(self, path):
         info = probe_file(path)
@@ -130,20 +132,26 @@ class ScreenshotsPage(QWidget):
                 f"Duration: {info.duration_str}  •  Resolution: {info.resolution}  •  "
                 f"Codec: {info.video_codec}"
             )
-        ext = self.img_fmt.currentData()
-        self.output.suggest_path(path, ext)
+        self.output.suggest_directory(path, subdirectory="FFmpeg Studio Output")
 
     def _start(self):
         inp = self.drop.filepath
-        out = self.output.output_path
         if not inp:
             self.runner.set_error("No input file selected.")
             return
-        if not out:
-            self.runner.set_error("No output path specified.")
+        out_dir = self.output.output_path
+        if not out_dir:
+            self.runner.set_error("No output folder specified.")
             return
-        if output_overwrites_input(inp, out):
-            self.runner.set_error("Output path must be different from the input file.")
+
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+            out = build_folder_output_path(inp, out_dir, self.img_fmt.currentData())
+        except OSError as e:
+            self.runner.set_error(f"Could not create output folder: {e}")
+            return
+        except ValueError as e:
+            self.runner.set_error(str(e))
             return
 
         mode = self.mode.currentData()
@@ -153,28 +161,18 @@ class ScreenshotsPage(QWidget):
             args = build_screenshot_command(inp, out, timestamp=ts)
         elif mode == "interval":
             # Ensure output has frame pattern
-            import os
             base, ext = os.path.splitext(out)
             if "%0" not in out:
                 out = f"{base}_%04d{ext}"
-                self.output.line.setText(out)
 
             fps = 1.0 / self.interval.value()
             args = ["-i", inp, "-vf", f"fps={fps}", out]
         else:  # all frames
-            import os
             base, ext = os.path.splitext(out)
             if "%0" not in out:
                 out = f"{base}_%06d{ext}"
-                self.output.line.setText(out)
 
             args = ["-i", inp, out]
-
-        try:
-            ensure_output_parent(out)
-        except OSError as e:
-            self.runner.set_error(f"Could not create output folder: {e}")
-            return
 
         dur = self._media_info.duration if self._media_info else 0
         self._worker = FFmpegWorker(args, dur)

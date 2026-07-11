@@ -291,13 +291,21 @@ class OutputSelector(QWidget):
         out = p.parent / f"{p.stem}_output{ext}"
         self.path_edit.setText(str(out))
 
-    def suggest_directory(self, input_path: str, force: bool = False):
-        """Suggest the input file parent as output folder."""
+    def suggest_directory(
+        self,
+        input_path: str,
+        force: bool = False,
+        subdirectory: str = "",
+    ):
+        """Suggest an output folder beside the input file."""
         if not input_path:
             return
         if self.output_path and not force:
             return
-        self.path_edit.setText(str(Path(input_path).parent))
+        output_dir = Path(input_path).parent
+        if subdirectory:
+            output_dir /= subdirectory
+        self.path_edit.setText(str(output_dir))
 
     def set_suffix(self, suffix: str):
         self._suffix = suffix

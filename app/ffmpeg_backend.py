@@ -290,6 +290,30 @@ TEXT_SUBTITLE_CODECS = {
     "ass", "ssa", "subrip", "text", "webvtt", "mov_text", "srt", "microdvd",
     "mpl2", "subviewer", "subviewer1", "vplayer", "realtext", "jacosub",
 }
+BITMAP_SUBTITLE_CODECS = {
+    "hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub",
+}
+TEXT_SUBTITLE_EXTENSIONS = {".ass", ".srt", ".ssa", ".vtt"}
+BITMAP_SUBTITLE_EXTENSIONS = {".idx", ".sub", ".sup"}
+
+
+def is_text_subtitle_codec(codec: str) -> bool:
+    """Return whether FFmpeg should render this subtitle codec through libass."""
+    return str(codec or "").lower() in TEXT_SUBTITLE_CODECS
+
+
+def detect_subtitle_codec(path: str) -> str:
+    """Detect an external subtitle codec, falling back to its file extension."""
+    info = probe_file(path)
+    if info and info.subtitle_streams:
+        return str(info.subtitle_streams[0].get("codec_name", "")).lower()
+
+    extension = _extension(path)
+    if extension in TEXT_SUBTITLE_EXTENSIONS:
+        return "subrip" if extension == ".srt" else extension.removeprefix(".")
+    if extension in BITMAP_SUBTITLE_EXTENSIONS:
+        return "hdmv_pgs_subtitle" if extension == ".sup" else "dvd_subtitle"
+    return ""
 
 
 DEFAULT_VIDEO_CODEC_BY_EXTENSION = {
@@ -657,6 +681,35 @@ def build_batch_output_path(
     return output
 
 
+def build_folder_output_path(
+    input_path: str,
+    output_dir: str,
+    suffix: str,
+    reserved_paths: set[str] | None = None,
+) -> str:
+    """Build an output path preserving the source filename inside a chosen folder."""
+    ext = _extension(suffix) or os.path.splitext(input_path)[1]
+    stem = os.path.splitext(os.path.basename(input_path))[0]
+    output = os.path.abspath(os.path.join(output_dir, f"{stem}{ext}"))
+    normalized = os.path.normcase(output)
+    reserved = {
+        os.path.normcase(os.path.abspath(path))
+        for path in (reserved_paths or set())
+    }
+
+    if _same_path(input_path, output):
+        raise ValueError("Output folder must be different from the source folder for this format.")
+    if normalized in reserved:
+        raise ValueError(
+            f"Multiple inputs would create '{os.path.basename(output)}'. Select a different output folder."
+        )
+    if os.path.exists(output):
+        raise ValueError(
+            f"'{os.path.basename(output)}' already exists in the output folder. Select another folder."
+        )
+    return output
+
+
 def ensure_output_parent(output_path: str):
     """Create the parent directory for an output file if it does not exist."""
     parent = os.path.dirname(os.path.abspath(output_path))
@@ -712,6 +765,37 @@ def _append_video_filter(args: list[str], video_filter: str) -> list[str]:
     return updated
 
 
+def _extract_video_filter(args: list[str]) -> tuple[list[str], str]:
+    """Remove one simple video filter option so it can join a complex graph."""
+    updated = list(args)
+    for option in ("-vf", "-filter:v"):
+        if option in updated:
+            index = updated.index(option)
+            if index + 1 < len(updated):
+                video_filter = updated[index + 1]
+                del updated[index:index + 2]
+                return updated, video_filter
+    return updated, ""
+
+
+def _build_bitmap_subtitle_graph(
+    video_selector: str,
+    subtitle_selector: str,
+    video_filter: str = "",
+) -> tuple[str, str]:
+    """Overlay image-based subtitles, then apply any existing video filter."""
+    graph = (
+        f"[{subtitle_selector}][{video_selector}]"
+        "scale2ref[scaled_subtitle][video_base];"
+        "[video_base][scaled_subtitle]overlay=eof_action=pass:repeatlast=0[subtitle_overlay]"
+    )
+    output_label = "subtitle_overlay"
+    if video_filter:
+        output_label = "burned_video"
+        graph += f";[subtitle_overlay]{video_filter}[{output_label}]"
+    return graph, f"[{output_label}]"
+
+
 def build_preset_command(
     input_path: str,
     output_path: str,
@@ -720,6 +804,7 @@ def build_preset_command(
     subtitle_path: str = "",
     subtitle_stream_index: int | None = None,
     video_stream_index: int | None = None,
+    subtitle_codec: str = "subrip",
 ) -> list[str]:
     """Build a robust preset command with explicit video/audio stream mapping."""
     output_ext = _extension(output_path)
@@ -730,11 +815,24 @@ def build_preset_command(
     if should_burn_subtitles and not has_video_output:
         raise ValueError("Subtitle burn-in requires a video output preset.")
 
+    video_selector = f"0:{int(video_stream_index)}" if video_stream_index is not None else "0:v:0"
+    bitmap_subtitles = should_burn_subtitles and not is_text_subtitle_codec(subtitle_codec)
+    output_args = list(preset_args)
+
     args = ["-i", input_path]
+    if bitmap_subtitles and subtitle_path:
+        args += ["-i", subtitle_path]
 
     if has_video_output:
-        video_map = f"0:{int(video_stream_index)}" if video_stream_index is not None else "0:v:0"
-        args += ["-map", video_map]
+        if bitmap_subtitles:
+            subtitle_selector = "1:s:0" if subtitle_path else f"0:s:{int(subtitle_stream_index or 0)}"
+            output_args, video_filter = _extract_video_filter(output_args)
+            graph, filtered_video = _build_bitmap_subtitle_graph(
+                video_selector, subtitle_selector, video_filter
+            )
+            args += ["-filter_complex", graph, "-map", filtered_video]
+        else:
+            args += ["-map", video_selector]
         if has_audio_output:
             args += ["-map", "0:a?"]
     else:
@@ -742,8 +840,7 @@ def build_preset_command(
 
     args += ["-sn"]
 
-    output_args = list(preset_args)
-    if should_burn_subtitles:
+    if should_burn_subtitles and not bitmap_subtitles:
         output_args = _append_video_filter(
             output_args,
             build_subtitles_filter(input_path, subtitle_path, subtitle_stream_index),
@@ -781,6 +878,8 @@ def build_convert_command(
     burn_subtitles: bool = False,
     subtitle_path: str = "",
     subtitle_stream_index: int | None = None,
+    subtitle_codec: str = "subrip",
+    video_stream_index: int | None = None,
 ) -> list[str]:
     """Build an ffmpeg conversion command from parameters."""
     output_ext = _extension(output_path)
@@ -796,43 +895,59 @@ def build_convert_command(
     if should_burn_subtitles and video_codec == "copy":
         video_codec = _auto_video_codec(output_ext) or "libx264"
 
+    bitmap_subtitles = should_burn_subtitles and not is_text_subtitle_codec(subtitle_codec)
+    video_selector = f"0:{int(video_stream_index)}" if video_stream_index is not None else "0:v:0"
     args = ["-i", input_path]
-    args += ["-sn"]
+    if bitmap_subtitles and subtitle_path:
+        args += ["-i", subtitle_path]
+
+    output_args = []
 
     if not has_video_output:
-        args += ["-vn"]
+        output_args += ["-vn"]
     elif video_codec:
-        args += ["-c:v", video_codec]
+        output_args += ["-c:v", video_codec]
 
-    if should_burn_subtitles:
-        args += ["-vf", build_subtitles_filter(input_path, subtitle_path, subtitle_stream_index)]
+    if should_burn_subtitles and not bitmap_subtitles:
+        output_args += ["-vf", build_subtitles_filter(input_path, subtitle_path, subtitle_stream_index)]
 
     if not has_audio_output:
-        args += ["-an"]
+        output_args += ["-an"]
     elif audio_codec:
-        args += ["-c:a", audio_codec]
+        output_args += ["-c:a", audio_codec]
 
     if video_bitrate and has_video_output:
-        args += ["-b:v", video_bitrate]
+        output_args += ["-b:v", video_bitrate]
     if audio_bitrate and has_audio_output:
-        args += ["-b:a", audio_bitrate]
+        output_args += ["-b:a", audio_bitrate]
     if resolution and has_video_output:
-        args += ["-s", resolution]
+        output_args += ["-s", resolution]
     if frame_rate and has_video_output:
-        args += ["-r", frame_rate]
+        output_args += ["-r", frame_rate]
     if sample_rate and has_audio_output:
-        args += ["-ar", sample_rate]
+        output_args += ["-ar", sample_rate]
     if channels and has_audio_output:
-        args += ["-ac", channels]
+        output_args += ["-ac", channels]
     if preset and has_video_output:
-        args += ["-preset", preset]
+        output_args += ["-preset", preset]
     if crf and has_video_output:
-        args += ["-crf", crf]
+        output_args += ["-crf", crf]
     if extra_args:
-        args += split_command_args(extra_args)
+        output_args += split_command_args(extra_args)
 
-    args.append(output_path)
-    return args
+    if bitmap_subtitles:
+        subtitle_selector = "1:s:0" if subtitle_path else f"0:s:{int(subtitle_stream_index or 0)}"
+        output_args, video_filter = _extract_video_filter(output_args)
+        graph, filtered_video = _build_bitmap_subtitle_graph(
+            video_selector, subtitle_selector, video_filter
+        )
+        args += ["-filter_complex", graph, "-map", filtered_video]
+        if has_audio_output:
+            args += ["-map", "0:a?"]
+
+    args += ["-sn"]
+
+    return args + output_args + [output_path]
 
 
 def build_trim_command(

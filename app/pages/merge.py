@@ -1,5 +1,7 @@
 """Merge / Concatenate files page."""
 
+import os
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QScrollArea,
     QFrame, QCheckBox,
@@ -7,7 +9,7 @@ from PySide6.QtWidgets import (
 
 from app.ffmpeg_backend import (
     build_merge_command, FFmpegWorker, OUTPUT_FORMATS,
-    ensure_output_parent, output_overwrites_input,
+    build_folder_output_path,
 )
 from app.widgets.common import (
     MultiFileDropZone, OutputSelector, ParamRow, ProcessRunner,
@@ -46,6 +48,7 @@ class MergePage(QWidget):
         self.drop = MultiFileDropZone(
             file_filter="Media Files (*.mp4 *.mkv *.avi *.mov *.webm *.ts *.mp3 *.flac *.wav *.ogg);;All Files (*)"
         )
+        self.drop.files_changed.connect(self._on_files_changed)
         layout.addWidget(self.drop)
 
         self.info_label = QLabel("Drag files in the desired order. You can reorder them in the list.")
@@ -60,7 +63,8 @@ class MergePage(QWidget):
         layout.addWidget(ParamRow("Format", self.output_fmt))
 
         self.output = OutputSelector(".mp4")
-        layout.addWidget(ParamRow("Output File", self.output))
+        self.output.set_directory_mode(True)
+        layout.addWidget(ParamRow("Output Folder", self.output))
 
         self.reencode = QCheckBox("Re-encode (slower but works with mixed formats)")
         layout.addWidget(self.reencode)
@@ -81,22 +85,27 @@ class MergePage(QWidget):
         ext = self.output_fmt.currentData()
         self.output.set_suffix(ext)
 
+    def _on_files_changed(self, files):
+        if files:
+            self.output.suggest_directory(files[0], subdirectory="FFmpeg Studio Output")
+
     def _start(self):
         files = self.drop.filepaths
-        out = self.output.output_path
         if len(files) < 2:
             self.runner.set_error("Please add at least 2 files.")
             return
-        if not out:
-            self.runner.set_error("No output path specified.")
-            return
-        if any(output_overwrites_input(f, out) for f in files):
-            self.runner.set_error("Output path must be different from the input files.")
+        out_dir = self.output.output_path
+        if not out_dir:
+            self.runner.set_error("No output folder specified.")
             return
         try:
-            ensure_output_parent(out)
+            os.makedirs(out_dir, exist_ok=True)
+            out = build_folder_output_path(files[0], out_dir, self.output_fmt.currentData())
         except OSError as e:
             self.runner.set_error(f"Could not create output folder: {e}")
+            return
+        except ValueError as e:
+            self.runner.set_error(str(e))
             return
 
         args = build_merge_command(

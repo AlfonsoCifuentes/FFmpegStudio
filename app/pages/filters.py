@@ -1,5 +1,7 @@
 """Filters & Effects page – video and audio filters with live preview of the command."""
 
+import os
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QScrollArea, QFrame, QCheckBox,
@@ -7,7 +9,7 @@ from PySide6.QtWidgets import (
 
 from app.ffmpeg_backend import (
     VIDEO_FILTERS, AUDIO_FILTERS, FFmpegWorker, probe_file,
-    OUTPUT_FORMATS, ensure_output_parent, output_overwrites_input,
+    OUTPUT_FORMATS, build_folder_output_path,
     split_command_args,
 )
 from app.widgets.common import (
@@ -112,7 +114,8 @@ class FiltersPage(QWidget):
         layout.addWidget(ParamRow("Format", self.output_fmt))
 
         self.output = OutputSelector(".mp4")
-        layout.addWidget(ParamRow("Output File", self.output))
+        self.output.set_directory_mode(True)
+        layout.addWidget(ParamRow("Output Folder", self.output))
 
         self.extra_args = QLineEdit()
         self.extra_args.setPlaceholderText("Extra ffmpeg arguments (optional)")
@@ -139,14 +142,12 @@ class FiltersPage(QWidget):
                 f"Duration: {info.duration_str}  •  Video: {info.video_codec}  •  "
                 f"Audio: {info.audio_codec}  •  Res: {info.resolution}"
             )
-        ext = self.output_fmt.currentData()
-        self.output.suggest_path(path, ext)
+        self.output.suggest_directory(path, subdirectory="FFmpeg Studio Output")
 
     def _on_format_change(self):
         ext = self.output_fmt.currentData()
         self.output.set_suffix(ext)
-        if self.drop.filepath:
-            self.output.suggest_path(self.drop.filepath, ext)
+        self.output.suggest_directory(self.drop.filepath, subdirectory="FFmpeg Studio Output")
 
     def _build_vf(self):
         parts = [fc.filter_value for fc in self.video_checks if fc.is_checked]
@@ -164,20 +165,21 @@ class FiltersPage(QWidget):
 
     def _start(self):
         inp = self.drop.filepath
-        out = self.output.output_path
         if not inp:
             self.runner.set_error("No input file selected.")
             return
-        if not out:
-            self.runner.set_error("No output path specified.")
-            return
-        if output_overwrites_input(inp, out):
-            self.runner.set_error("Output path must be different from the input file.")
+        out_dir = self.output.output_path
+        if not out_dir:
+            self.runner.set_error("No output folder specified.")
             return
         try:
-            ensure_output_parent(out)
+            os.makedirs(out_dir, exist_ok=True)
+            out = build_folder_output_path(inp, out_dir, self.output_fmt.currentData())
         except OSError as e:
             self.runner.set_error(f"Could not create output folder: {e}")
+            return
+        except ValueError as e:
+            self.runner.set_error(str(e))
             return
 
         args = ["-i", inp]
