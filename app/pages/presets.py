@@ -13,6 +13,7 @@ from app.presets import PRESETS, PRESET_CATEGORIES
 from app.ffmpeg_backend import (
     AUDIO_ONLY_EXTENSIONS, TEXT_SUBTITLE_CODECS,
     build_batch_output_path, build_preset_command, ensure_output_parent,
+    get_primary_video_stream_index,
     output_overwrites_input,
     FFmpegWorker, BatchFFmpegWorker, probe_file,
 )
@@ -57,7 +58,7 @@ class PresetsPage(QWidget):
         layout.addWidget(SectionHeader("Input"))
         self.drop = FileDropZone(
             accept_multiple=True,
-            file_filter="Media Files (*.mp4 *.mkv *.avi *.mov *.webm *.flv *.ts *.wmv *.mpg *.mp3 *.aac *.flac *.wav *.ogg);;All Files (*)"
+            file_filter="Media Files (*.mp4 *.m4v *.mkv *.avi *.mov *.webm *.flv *.ts *.mts *.m2ts *.wmv *.mpg *.mpeg *.vob *.3gp *.mp3 *.aac *.flac *.wav *.ogg);;All Files (*)"
         )
         self.drop.file_dropped.connect(self._on_file)
         self.drop.files_dropped.connect(self._on_files)
@@ -329,10 +330,11 @@ class PresetsPage(QWidget):
         return {"subtitle_path": "", "subtitle_stream_index": subtitle_index}
 
     def _build_args(self, inp, out, file_info=None):
+        video_stream_index = get_primary_video_stream_index(file_info)
         if (
             file_info
             and self._selected_preset.extension not in AUDIO_ONLY_EXTENSIONS
-            and not file_info.video_streams
+            and video_stream_index is None
         ):
             raise ValueError(f"{os.path.basename(inp)} does not contain a video stream for this preset.")
 
@@ -344,6 +346,7 @@ class PresetsPage(QWidget):
             burn_subtitles=subtitle is not None,
             subtitle_path=subtitle["subtitle_path"] if subtitle else "",
             subtitle_stream_index=subtitle["subtitle_stream_index"] if subtitle else None,
+            video_stream_index=video_stream_index,
         )
 
     def _start(self):
@@ -370,15 +373,19 @@ class PresetsPage(QWidget):
                 return
 
             tasks = []
+            reserved_outputs = set()
             for f in input_files:
                 info = probe_file(f)
                 dur = info.duration if info else 0
-                out = build_batch_output_path(f, out_dir, self._selected_preset.extension)
+                out = build_batch_output_path(
+                    f, out_dir, self._selected_preset.extension, reserved_outputs
+                )
                 try:
                     args = self._build_args(f, out, info)
                 except ValueError as e:
                     self.runner.set_error(str(e))
                     return
+                reserved_outputs.add(os.path.normcase(os.path.abspath(out)))
                 tasks.append((args, dur))
             self._worker = BatchFFmpegWorker(tasks)
             self.runner.connect_worker(self._worker)

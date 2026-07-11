@@ -50,6 +50,7 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
+    version=os.path.join(ROOT, 'file_version_info.txt'),
     codesign_identity=None,
     entitlements_file=None,
     icon=os.path.join(ROOT, 'assets', 'icon.ico'),
